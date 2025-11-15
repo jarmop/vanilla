@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"os"
 )
 
 func main() {
@@ -30,25 +31,20 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 
-	response := "HTTP/1.1 200 OK\r\n" +
-				"Content-Type: text/html\r\n" +
-				"\r\n" +
-				"Hello World!" +
-				"<script>alert(\"Hello!\")</script>"
+	path := "../public/index.html"
+	content, err2 := os.ReadFile(path)
+	if err2 != nil {
+		fmt.Println(err2)
+		return
+	}
 
-	fmt.Fprint(conn, response)
+	fmt.Fprint(conn, getHeader()+string(content))
 
-	fmt.Printf("Received: %s\n", buf)
+	fmt.Printf("%s\n", buf)
 }
 
-// ln, err := net.Listen("tcp", ":8080")
-// if err != nil {
-// 	// handle error
-// }
-// for {
-// 	conn, err := ln.Accept()
-// 	if err != nil {
-// 		// handle error
-// 	}
-// 	go handleConnection(conn)
-// }
+func getHeader() string {
+	return "HTTP/1.1 200 OK\r\n" +
+		"Content-Type: text/html\r\n" +
+		"\r\n"
+}
