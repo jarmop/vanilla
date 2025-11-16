@@ -2,7 +2,7 @@ run: build
 	@./http
 
 build:
-	@rustc http.rs
+	@rustc src/http.rs
 
 clean:
-	rm http
+	rm ./http
