@@ -25,6 +25,7 @@ func main() {
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
+	defer fmt.Print("\n---------------\n\n")
 
 	buf := make([]byte, 1024)
 	_, err := conn.Read(buf)
@@ -37,7 +38,11 @@ func handleConnection(conn net.Conn) {
 	requestHeader := requestSlices[0]
 
 	// body := requestSlices[1]
-	// trimmedBody := strings.ReplaceAll(body, "\x00", "")
+	// fmt.Printf("ORIGINAL BODY\n|%q|\n\n", body)
+	// bodyTrimmed := strings.ReplaceAll(body, "\x00", "")
+	// bodyTrimmed := strings.TrimSpace(body)
+	// bodyTrimmed := strings.Trim(body, "\x00")
+	// fmt.Printf("TRIMMED BODY\n|%q|\n\n", bodyTrimmed)
 
 	// parseHeader(string(buf))
 	requestTarget := parseHeader(requestHeader)
@@ -45,7 +50,7 @@ func handleConnection(conn net.Conn) {
 	if len(requestTarget) > 1 {
 		relativePath = requestTarget
 	}
-	path := filepath.Join("../../public/", relativePath)
+	path := filepath.Join("../../../public/", relativePath)
 	// path := filepath.Join("../public/", "index.html")
 
 	requestBody, err2 := os.ReadFile(path)
@@ -55,7 +60,6 @@ func handleConnection(conn net.Conn) {
 	}
 
 	fmt.Fprint(conn, getHeader()+string(requestBody))
-
 }
 
 func getHeader() string {
@@ -66,29 +70,27 @@ func getHeader() string {
 
 func parseHeader(header string) string {
 	rows := strings.Split(header, "\r\n")
-	requestLineParts := strings.Split(rows[0], " ")
+	requestLine := rows[0]
+	// fieldsSection := rows[1:]
+	requestLineParts := strings.Split(requestLine, " ")
 	// method := requestLineParts[0]
 	requestTarget := requestLineParts[1]
 	// protocol := requestLineParts[2]
 	
-	fields := make(map[string]string)
-	for _, row := range rows[1:] {
-		parts := strings.Split(row, ":")
-		fields[parts[0]] = strings.TrimSpace(strings.Join(parts[1:], ":"))
-	}
+	// fields := make(map[string]string)
+	// for _, row := range fieldsSection {
+	// 	parts := strings.Split(row, ":")
+	// 	fields[parts[0]] = strings.TrimSpace(strings.Join(parts[1:], ":"))
+	// }
 
-	fmt.Printf("Host? %s\n", fields["Host"])
-	fmt.Printf("cache? %s\n\n", fields["Cache-Control"])
-
-
-	fmt.Printf("%s\n\n", rows[0])
-
-	fmt.Printf("%s\n", header)
-
-	// fmt.Printf("%q\n", strings.ReplaceAll(header, "\x00", ""))
-	fmt.Printf("Request length %d\n", len(header))
-
-	fmt.Println("\n---------------\n")
+	fmt.Printf("REQUEST LINE\n%s\n\n", requestLine)
+	// fmt.Print("FIELDS\n")
+	// for _,key := range slices.Sorted(maps.Keys(fields)) {
+	// 	fmt.Printf("%s: %s\n", key, fields[key])
+	// }
+	// fmt.Print("\n")
+	// fmt.Printf("ORIGINAL HEADER\n%s\n\n", header)
+	// fmt.Printf("Request length %d\n\n", len(header))
 
 	return requestTarget
 }
