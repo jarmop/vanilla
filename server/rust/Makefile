@@ -1,8 +1,8 @@
 run: build
-	@./http
+	@./main
 
 build:
-	@rustc src/http.rs
+	@rustc src/main.rs
 
 clean:
-	rm ./http
+	rm ./main

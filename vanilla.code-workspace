@@ -1,8 +1,0 @@
-{
-	"folders": [
-		{ "path": "public" },
-		{ "path": "server/go" },
-		{ "path": "server/rust" }
-	],
-	"settings": {}
-}
