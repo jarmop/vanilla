@@ -11,12 +11,15 @@ const listener = Deno.listen({
 });
 for await (const conn of listener) {
   await handleConnection(conn);
-  conn.close();
+  // await conn.readable.pipeTo(Deno.stdout.writable);
 
-  console.log("\n----------------------\n");
+  conn.close();
 }
 
 async function handleConnection(conn: Deno.TcpConn) {
+  console.log(`\n----------------------`);
+  console.log(`${(new Date()).toLocaleTimeString("de-DE")}\n`);
+
   const requestBuffer = new Uint8Array(1024);
   const numberOfBytesRead = await conn.read(requestBuffer);
   if (numberOfBytesRead === null) {
@@ -36,7 +39,7 @@ async function handleConnection(conn: Deno.TcpConn) {
 
   const requestTarget = parseHeader(header);
   const filename = requestTarget.length > 1 ? requestTarget : "index.html";
-  const filePath = denoPath.join("../../public/", filename);
+  const filePath = denoPath.join("../../../public/", filename);
   try {
     const responseText = await Deno.readTextFile(filePath);
     // console.log(JSON.stringify(responseText));
@@ -51,8 +54,11 @@ async function handleConnection(conn: Deno.TcpConn) {
 }
 
 function parseHeader(header: string) {
-  console.log(header);
   const requestLine = header.split(NEWLINE)[0];
+
+  // console.log(requestLine);
+  console.log(header);
+
   return requestLine.split(" ")[1];
 }
 
