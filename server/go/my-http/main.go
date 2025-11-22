@@ -1,23 +1,52 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-func main() {
-	ln, err := net.Listen("tcp", ":3000")
+func getTlsListener(port string) (net.Listener, error) {
+	cert, err := tls.LoadX509KeyPair("../../cert.pem", "../../key.pem")
 	if err != nil {
-		fmt.Println(err)
+		return nil, err
 	}
 
+	config := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		InsecureSkipVerify: true,
+	}
+
+	return tls.Listen("tcp", ":" + port, config)
+}
+
+func main() {
+	var port string
+	var listener net.Listener
+	var err error
+	if len(os.Args) > 1 && os.Args[1] == "tls" {
+		port = "8443"
+		listener, err = getTlsListener(port)
+	} else {
+		port = "8000"
+		listener, err = net.Listen("tcp", ":" + port)
+	}
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Listening on port %s\n", port)
+
 	for {
-		conn, err := ln.Accept()
+		conn, err := listener.Accept()
 		if err != nil {
-			fmt.Println(err)
+			log.Println("Accept error:", err)
+			continue
 		}
 		go handleConnection(conn)
 	}
@@ -27,10 +56,10 @@ func handleConnection(conn net.Conn) {
 	defer conn.Close()
 	defer fmt.Print("\n---------------\n\n")
 
-	buf := make([]byte, 1024)
+	buf := make([]byte, 4096)
 	_, err := conn.Read(buf)
 	if err != nil {
-		fmt.Println(err)
+		log.Println("Read error:", err)
 		return
 	}
 

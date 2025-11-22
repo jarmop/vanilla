@@ -6,9 +6,10 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 )
 
-func main() {
+func getTlsListener(port string) (net.Listener, error) {
 	cert, err := tls.LoadX509KeyPair("../../cert.pem", "../../key.pem")
 	if err != nil {
 		log.Fatal(err)
@@ -16,17 +17,30 @@ func main() {
 
 	config := &tls.Config{
 		Certificates: []tls.Certificate{cert},
-		// Required for self-signed certs so Chrome doesn't immediately reject handshake
 		InsecureSkipVerify: true,
 	}
 
-	listener, err := tls.Listen("tcp", ":8443", config)
+	return tls.Listen("tcp", ":" + port, config)
+}
+
+func main() {
+	var port string
+	var listener net.Listener
+	var err error
+	if len(os.Args) > 1 && os.Args[1] == "tls" {
+		port = "8443"
+		listener, err = getTlsListener(port)
+	} else {
+		port = "8000"
+		listener, err = net.Listen("tcp", ":" + port)
+	}
+
+	
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer listener.Close()
 
-	fmt.Println("Listening on https://localhost:8443")
+	fmt.Printf("Listening on port %s\n", port)
 
 	for {
 		conn, err := listener.Accept()
