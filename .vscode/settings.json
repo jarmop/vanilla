@@ -1,5 +1,13 @@
 {
     "rust-analyzer.linkedProjects": [
-        "server/rust/Cargo.toml"
-    ]
+        "server/rust/http/Cargo.toml",
+        "server/rust/https/Cargo.toml"
+    ],
+    "rust-analyzer.inlayHints.genericParameterHints.const.enable": false,
+    "rust-analyzer.inlayHints.typeHints.enable": false,
+    "rust-analyzer.inlayHints.chainingHints.enable": false,
+    "rust-analyzer.inlayHints.renderColons": false,
+    "rust-analyzer.inlayHints.closingBraceHints.enable": false,
+    "rust-analyzer.inlayHints.expressionAdjustmentHints.disableReborrows": false,
+    "rust-analyzer.inlayHints.parameterHints.enable": false
 }
