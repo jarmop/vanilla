@@ -6,12 +6,14 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+#define PORT 8000
+
 int main(void)
 {
-    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd < 0) {
+    int main_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (main_socket < 0) {
         perror("socket");
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     /* Allow reusing the address immediately after this program is closed. 
@@ -20,51 +22,49 @@ int main(void)
     Setting SO_REUSEADDR to 1 allows binding the socket to a port that is in
     TIME_WAIT. */
     int sockopt_value = 1;
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &sockopt_value, sizeof(sockopt_value));
+    setsockopt(main_socket, SOL_SOCKET, SO_REUSEADDR, &sockopt_value, sizeof(sockopt_value));
 
-    int port = 3000;
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    addr.sin_port = htons(port);
+    addr.sin_port = htons(PORT);
 
-    if (bind(server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+    if (bind(main_socket, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         perror("bind");
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
-    if (listen(server_fd, 1) < 0) {
+    if (listen(main_socket, 1) < 0) {
         perror("listen");
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
-    fprintf(stderr, "Listening port %d\n\n", port);
+    printf("Server listening on port %d\n", PORT);
 
-    char response[1024] = "HTTP/1.1 200 OK\r\n"
+    const char *response = "HTTP/1.1 200 OK\r\n"
                           "Content-Type: text/html\r\n"
                           "\r\n"
                           "Hello World!"
                           "<script>console.log(\"Hello!\")</script>";
 
-    for (;;) {
-        int client_fd = accept(server_fd, NULL, NULL);
-        if (client_fd < 0) {
+    while (1) {
+        int conn_socket = accept(main_socket, NULL, NULL);
+        if (conn_socket < 0) {
             perror("accept");
-            exit(1);
+            continue;
         }
 
         char buf[1024];
-        ssize_t n = read(client_fd, buf, sizeof(buf)-1);
+        ssize_t n = read(conn_socket, buf, sizeof(buf)-1);
         if (n > 0) {
             buf[n] = '\0';
             printf("Received: %s\n", buf);
-            write(client_fd, response, strlen(response));
+            write(conn_socket, response, strlen(response));
         }
 
-        close(client_fd);
+        close(conn_socket);
     }
 
-    close(server_fd);
-    return 0;
+    return EXIT_SUCCESS;
 }
