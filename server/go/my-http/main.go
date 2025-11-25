@@ -79,8 +79,7 @@ func handleConnection(conn net.Conn) {
 	if len(requestTarget) > 1 {
 		relativePath = requestTarget
 	}
-	path := filepath.Join("../../../public/", relativePath)
-	// path := filepath.Join("../public/", "index.html")
+	path := filepath.Join("../../public/", relativePath)
 
 	requestBody, err2 := os.ReadFile(path)
 	if err2 != nil {

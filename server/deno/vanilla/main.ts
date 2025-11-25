@@ -39,7 +39,7 @@ async function handleConnection(conn: Deno.TcpConn) {
 
   const requestTarget = parseHeader(header);
   const filename = requestTarget.length > 1 ? requestTarget : "index.html";
-  const filePath = denoPath.join("../../../public/", filename);
+  const filePath = denoPath.join("../../public/", filename);
   try {
     const responseText = await Deno.readTextFile(filePath);
     // console.log(JSON.stringify(responseText));
