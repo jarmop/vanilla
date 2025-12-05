@@ -1,7 +1,7 @@
 // I can have comments!
 {
   "tasks": {
-    "dev": "deno run --watch --allow-net --allow-read main.ts"
+    "dev": "deno run --watch --allow-net --allow-read --allow-run main.ts"
   },
   "imports": {
     "@std/http": "jsr:@std/http"
