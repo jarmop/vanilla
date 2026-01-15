@@ -17,80 +17,17 @@
 static struct wl_compositor *compositor;
 static struct wl_shm *shm;
 static struct xdg_wm_base *wm_base;
-
-static void __xdg_wm_base_ping(
-    void *data,
-    struct xdg_wm_base *xdg_wm_base,
-    uint32_t serial
-) {
-    xdg_wm_base_pong(xdg_wm_base, serial);
-}
-
-static const struct xdg_wm_base_listener xdg_wm_base_listener = {
-    .ping = __xdg_wm_base_ping,
-};
+struct wl_surface *surface;
+struct shm_buffer buf;
 
 // Configuration state
 static int configured = 0;
-static int win_width = 800;
-static int win_height = 1000;
-
-static void __registry_handler(
-    void *data,
-    struct wl_registry *registry,
-    uint32_t id,
-    const char *interface,
-    uint32_t version
-) {
-    if (strcmp(interface, wl_compositor_interface.name) == 0) {
-        compositor = wl_registry_bind(registry, id, &wl_compositor_interface, 4);
-    } else if (strcmp(interface, wl_shm_interface.name) == 0) {
-        shm = wl_registry_bind(registry, id, &wl_shm_interface, 1);
-    } else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
-        wm_base = wl_registry_bind(registry, id, &xdg_wm_base_interface, 1);
-        xdg_wm_base_add_listener(wm_base, &xdg_wm_base_listener, NULL);
-    }
-}
-
-static void __registry_remove(void *data, struct wl_registry *registry, uint32_t id) {}
-
-static const struct wl_registry_listener registry_listener = {
-    .global = __registry_handler,
-    .global_remove = __registry_remove
-};
-
-static void __xdg_surface_configure(
-    void *data, 
-    struct xdg_surface *xdg_surface, 
-    uint32_t serial
-) {
-    xdg_surface_ack_configure(xdg_surface, serial);
-    configured = 1;
-}
-
-static const struct xdg_surface_listener xdg_surface_listener = {
-    .configure = __xdg_surface_configure,
-};
-
-static void __xdg_toplevel_configure(
-    void *data,
-    struct xdg_toplevel *toplevel,
-    int32_t width,
-    int32_t height,
-    struct wl_array *states
-) {
-    if (width > 0) { 
-        win_width = width; 
-    }
-    if (height > 0) { 
-        win_height = height; 
-    }
-}
-
-static const struct xdg_toplevel_listener xdg_toplevel_listener = {
-    .configure = __xdg_toplevel_configure,
-    .close = NULL,
-};
+const int initial_width = 800;
+const int initial_height = 1000;
+static int width = initial_width;
+static int height = initial_height;
+static int new_width = initial_width;
+static int new_height = initial_height;
 
 static void shm_buffer_destroy(struct shm_buffer *b) {
     if (!b) return;
@@ -144,6 +81,93 @@ static int shm_buffer_create(struct shm_buffer *buf, int width, int height) {
     return 0;
 }
 
+static void __xdg_wm_base_ping(
+    void *data,
+    struct xdg_wm_base *xdg_wm_base,
+    uint32_t serial
+) {
+    xdg_wm_base_pong(xdg_wm_base, serial);
+}
+
+static const struct xdg_wm_base_listener xdg_wm_base_listener = {
+    .ping = __xdg_wm_base_ping,
+};
+
+
+static void __registry_handler(
+    void *data,
+    struct wl_registry *registry,
+    uint32_t id,
+    const char *interface,
+    uint32_t version
+) {
+    if (strcmp(interface, wl_compositor_interface.name) == 0) {
+        compositor = wl_registry_bind(registry, id, &wl_compositor_interface, 4);
+    } else if (strcmp(interface, wl_shm_interface.name) == 0) {
+        shm = wl_registry_bind(registry, id, &wl_shm_interface, 1);
+    } else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
+        wm_base = wl_registry_bind(registry, id, &xdg_wm_base_interface, 1);
+        xdg_wm_base_add_listener(wm_base, &xdg_wm_base_listener, NULL);
+    }
+}
+
+static void __registry_remove(void *data, struct wl_registry *registry, uint32_t id) {}
+
+static const struct wl_registry_listener registry_listener = {
+    .global = __registry_handler,
+    .global_remove = __registry_remove
+};
+
+static void resize_window(int width, int height) {
+    shm_buffer_destroy(&buf);
+    shm_buffer_create(&buf, width, height);
+
+    draw(&buf);
+
+    wl_surface_attach(surface, buf.buffer, 0, 0);
+    wl_surface_damage_buffer(surface, 0, 0, width, height);
+    wl_surface_commit(surface);
+}
+
+static void __xdg_surface_configure(
+    void *data, 
+    struct xdg_surface *xdg_surface, 
+    uint32_t serial
+) {
+    xdg_surface_ack_configure(xdg_surface, serial);
+    configured = 1;
+    if (
+        new_width > 0
+        && new_height > 0
+        && (new_width != width || new_height != height)
+    ) {
+        resize_window(new_width, new_height);
+        width = new_width; height = new_height;
+    }
+}
+
+static const struct xdg_surface_listener xdg_surface_listener = {
+    .configure = __xdg_surface_configure,
+};
+
+static void __xdg_toplevel_configure(
+    void *data,
+    struct xdg_toplevel *toplevel,
+    int32_t width,
+    int32_t height,
+    struct wl_array *states
+) {
+    if (width > 0 && height > 0) {
+        new_width = width;
+        new_height = height;
+    }
+}
+
+static const struct xdg_toplevel_listener xdg_toplevel_listener = {
+    .configure = __xdg_toplevel_configure,
+    .close = NULL,
+};
+
 int main(int argc, char **argv) {
     /**
      * Get display from the compositor. Passing NULL as the display name, so
@@ -169,7 +193,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    struct wl_surface *surface = wl_compositor_create_surface(compositor);
+    surface = wl_compositor_create_surface(compositor);
     struct xdg_surface *xdg_surface = xdg_wm_base_get_xdg_surface(wm_base, surface);
     xdg_surface_add_listener(xdg_surface, &xdg_surface_listener, NULL);
     struct xdg_toplevel *toplevel = xdg_surface_get_toplevel(xdg_surface);
@@ -182,15 +206,14 @@ int main(int argc, char **argv) {
     }
 
     // ---------- Create shm buffer sized from configure ----------
-    struct shm_buffer buf;
-    if (shm_buffer_create(&buf, win_width, win_height) != 0) {
+    if (shm_buffer_create(&buf, width, height) != 0) {
         return 1;
     }
 
     draw(&buf);
 
     wl_surface_attach(surface, buf.buffer, 0, 0);
-    // wl_surface_damage_buffer(surface, 0, 0, buf.width, buf.height);
+    wl_surface_damage_buffer(surface, 0, 0, buf.width, buf.height);
     wl_surface_commit(surface);
 
     // Simple event loop (static image)
