@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
-#include "ide.h"
+#include "draw.h"
 
 static void fill_solid_xrgb(struct shm_buffer *buf, uint32_t xrgb) {
     uint32_t *p = (uint32_t*)buf->data;
@@ -112,17 +112,18 @@ static void draw_ascii_text_freetype(
     }
 }
 
-int draw(struct shm_buffer *buf) {
-    // Font path: pass as argv[1], otherwise use a common default on many Linux distros.
-    const char *font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf";
+FT_Library ft;
+FT_Face face;
 
-    FT_Library ft;
+int initialize_draw() {
+        // Font path: pass as argv[1], otherwise use a common default on many Linux distros.
+    const char *font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf";
+    
     if (FT_Init_FreeType(&ft) != 0) {
         fprintf(stderr, "FT_Init_FreeType failed\n");
         return 1;
     }
 
-    FT_Face face;
     if (FT_New_Face(ft, font_path, 0, &face) != 0) {
         fprintf(stderr, "FT_New_Face failed (font path: %s)\n", font_path);
         FT_Done_FreeType(ft);
@@ -134,6 +135,10 @@ int draw(struct shm_buffer *buf) {
         fprintf(stderr, "FT_Set_Pixel_Sizes failed\n");
     }
 
+    return 0;
+}
+
+void draw(struct shm_buffer *buf) {
     // Background + text
     fill_solid_xrgb(buf, pack_xrgb(0x00, 0x00, 0x00));
 
@@ -147,6 +152,4 @@ int draw(struct shm_buffer *buf) {
         0xBB, 
         0xBB
     );
-
-    return 0;
 }

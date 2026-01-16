@@ -29,14 +29,14 @@ static int height = initial_height;
 static int new_width = initial_width;
 static int new_height = initial_height;
 
-static void shm_buffer_destroy(struct shm_buffer *b) {
-    if (!b) return;
-    if (b->buffer) wl_buffer_destroy(b->buffer);
-    if (b->data && b->size > 0) munmap(b->data, (size_t)b->size);
-    memset(b, 0, sizeof(*b));
+static void __buffer_destroy(struct shm_buffer *buf) {
+    if (!buf) return;
+    if (buf->buffer) wl_buffer_destroy(buf->buffer);
+    if (buf->data && buf->size > 0) munmap(buf->data, (size_t)buf->size);
+    memset(buf, 0, sizeof(*buf));
 }
 
-static int shm_buffer_create(struct shm_buffer *buf, int width, int height) {
+static int __buffer_create(struct shm_buffer *buf, int width, int height) {
     memset(buf, 0, sizeof(*buf));
     buf->width = width;
     buf->height = height;
@@ -119,8 +119,8 @@ static const struct wl_registry_listener registry_listener = {
 };
 
 static void resize_window(int width, int height) {
-    shm_buffer_destroy(&buf);
-    shm_buffer_create(&buf, width, height);
+    __buffer_destroy(&buf);
+    __buffer_create(&buf, width, height);
 
     draw(&buf);
 
@@ -206,10 +206,11 @@ int main(int argc, char **argv) {
     }
 
     // ---------- Create shm buffer sized from configure ----------
-    if (shm_buffer_create(&buf, width, height) != 0) {
+    if (__buffer_create(&buf, width, height) != 0) {
         return 1;
     }
 
+    initialize_draw();
     draw(&buf);
 
     wl_surface_attach(surface, buf.buffer, 0, 0);
@@ -221,7 +222,7 @@ int main(int argc, char **argv) {
     }
 
     // Cleanup (won't be reached in this trivial loop unless display disconnects)
-    shm_buffer_destroy(&buf);
+    __buffer_destroy(&buf);
 
     return 0;
 }
