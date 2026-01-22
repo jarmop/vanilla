@@ -1,10 +1,6 @@
-import { binstr, bytes } from "./bin";
+import { bytes } from "./bin";
 import { leftPad } from "./helper";
 
-// type ElfStructure = Record<
-//     "ehdr64" | "phdr64",
-//     Record<number, [number, string]>
-// >;
 const elfStructures = {
     ehdr64: {
         0: [1, "EI_MAG0"],
@@ -45,7 +41,7 @@ const elfStructures = {
 
 type ElfStructures = typeof elfStructures;
 
-type ElfData = {
+export type ElfData = {
     bytes: number[];
     name: string;
     offset: number;
@@ -110,47 +106,62 @@ function parseElf(
     return elfDataList;
 }
 
-export const ehdr = parseElf(elfStructures.ehdr64);
-// export const ehdr = [];
-// const p_offset = ehdr.find(d => )
-export const phdr = parseElf(elfStructures.phdr64, 64);
-
-const ELF_MAGIC = [127, 69, 76, 70];
-
-function isElf(bytes: number[]) {
-    return bytes.slice(0, 4).every((byte, i) => byte === ELF_MAGIC[i]);
+export function bytesToNum(bytes: number[]) {
+    const hex = bytes.map((b) => leftPad(b.toString(16), 2)).join("");
+    return parseInt(hex, 16);
 }
 
-const codeStart = 0;
-/**
- * Assume 64-bit, little-endian
- * Todo: Handle endianness and "bitness"
- */
-binstr.slice(24, 8).split("").forEach((hex) => {
+function getValue(data: ElfData[], field: string) {
+    const bytes = data.find((d) => d.name == field)?.bytes || [];
+    // const hex = bytes.map((b) => leftPad(b.toString(16), 2)).join("");
     // const num = parseInt(hex, 16);
-    // for (let i = 0; i < 8; i++) {
-    //     codeStart += b * Math.pow();
-    // }
+    // return num;
+    return bytesToNum(bytes);
+}
+
+const elfHeaderSize = 64;
+const ehdr = parseElf(elfStructures.ehdr64);
+const startOfProgramHeaders = getValue(ehdr, "e_phoff");
+const programHeaderSize = getValue(ehdr, "e_phentsize");
+const numberOfProgramHeaders = getValue(ehdr, "e_phnum");
+const startOfSectionHeaders = getValue(ehdr, "e_shoff");
+const numberOfSectionHeaders = getValue(ehdr, "e_shnum");
+
+const phdr = parseElf(elfStructures.phdr64, elfHeaderSize);
+
+// const phdr2 = parseElf(elfStructures.phdr64, elfHeaderSize + programHeaderSize);
+
+// console.log(phdr2);
+
+const programHeaders = [];
+let ptOffset = elfHeaderSize;
+for (let i = 0; i < numberOfProgramHeaders; i++) {
+    programHeaders.push(parseElf(elfStructures.phdr64, ptOffset));
+    ptOffset += programHeaderSize;
+}
+
+const foo = programHeaders.filter((phdr) => {
+    return getValue(phdr, "p_type") == 1;
 });
+console.log(foo);
 
-// console.log(binstr.slice(24, 8));
-// console.log(binstr.slice(24 * 2, 24 * 2 + 8 * 2));
-// const str = binstr.slice(24 * 2, 24 * 2 + 8 * 2);
-const entryHex = bytes
-    .slice(24, 24 + 8)
-    .reverse()
-    .map((n) => leftPad(n.toString(16), 2))
-    .join("");
-// console.log(entryHex);
-// console.log(parseInt(entryHex, 16).toString(16));
+const e_entry = getValue(ehdr, "e_entry");
+const p_offset = getValue(phdr, "p_offset");
+const p_vaddr = getValue(phdr, "p_vaddr");
+// Have to check that the PT_LOAD = 1 (Loadable segment)
+const codeOffset = p_offset + (e_entry - p_vaddr);
+const codeSize = getValue(phdr, "p_filesz");
 
-export const elfData2 = {
-    type: isElf(bytes) ? "ELF" : "?",
-    bits: bytes[4] == 1 ? 32 : 64,
-    endianness: bytes[5] == 1 ? "little-endian" : "big-endian",
-    elfVersion: bytes[6],
-    osabi: bytes[7] == 3 ? "Linux" : "?",
-    abiVersion: bytes[8],
-    phdrStart: bytes[32].toString(16),
-    codeStart: parseInt(entryHex, 16).toString(16),
+export const elfMeta = {
+    codeOffset,
+    codeSize,
+    ehdr,
+    phdr,
+    programHeaders,
+    startOfProgramHeaders,
+    numberOfProgramHeaders,
+    startOfSectionHeaders,
+    numberOfSectionHeaders,
 };
+
+// const instructions = bytes
