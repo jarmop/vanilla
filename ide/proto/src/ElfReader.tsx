@@ -1,4 +1,4 @@
-import { ehdr, elfData2, phdr } from "./elfReader";
+import { bytesToNum, elfMeta } from "./elfReader";
 import { leftPad } from "./helper";
 
 // type ElfField = {
@@ -15,14 +15,43 @@ import { leftPad } from "./helper";
 // }
 
 function formatBytes(bytes: number[]) {
-    return bytes
-        .map((b) => leftPad(b.toString(16), 2))
-        .join(" ");
+    return "0x" + bytesToNum(bytes).toString(16);
+    // return bytes
+    //     .map((b) => leftPad(b.toString(16), 2))
+    //     .join(" ");
 }
 
 export function ElfReader() {
     return (
         <div>
+            <table className="table">
+                <tbody>
+                    <tr>
+                        <td>Start of program headers:</td>
+                        <td>{elfMeta.startOfProgramHeaders.toString(16)}</td>
+                    </tr>
+                    <tr>
+                        <td>Number of program headers:</td>
+                        <td>{elfMeta.numberOfProgramHeaders}</td>
+                    </tr>
+                    <tr>
+                        <td>Start of section headers:</td>
+                        <td>{elfMeta.startOfSectionHeaders.toString(16)}</td>
+                    </tr>
+                    <tr>
+                        <td>Number of section headers:</td>
+                        <td>{elfMeta.numberOfSectionHeaders}</td>
+                    </tr>
+                    <tr>
+                        <td>Start of instructions:</td>
+                        <td>{elfMeta.codeOffset.toString(16)}</td>
+                    </tr>
+                    <tr>
+                        <td>Size of instructions:</td>
+                        <td>{elfMeta.codeSize}</td>
+                    </tr>
+                </tbody>
+            </table>
             <div style={{ display: "flex" }}>
                 <div
                     style={{
@@ -34,8 +63,7 @@ export function ElfReader() {
                     <h3>ELF header</h3>
                     <table className="table">
                         <tbody>
-                            {/* {elfDataList.map(({ bytes, name, offset }) => ( */}
-                            {ehdr.map(({ bytes, name, offset }) => (
+                            {elfMeta.ehdr.map(({ bytes, name, offset }) => (
                                 <tr key={offset}>
                                     <td>{offset}</td>
                                     <td>{name}</td>
@@ -46,34 +74,42 @@ export function ElfReader() {
                         </tbody>
                     </table>
                 </div>
-                <div>
-                    <h3>Program header</h3>
-                    <table className="table">
-                        <tbody>
-                            {/* {elfDataList.map(({ bytes, name, offset }) => ( */}
-                            {phdr.map(({ bytes, name, offset }) => (
-                                <tr key={offset}>
-                                    <td>{offset}</td>
-                                    <td>{name}</td>
-                                    {/* <td>{formatBytes(bytes)}</td> */}
-                                    <td>{formatBytes(bytes)}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                <div style={{ display: "grid" }}>
+                    <h3>Program headers</h3>
+                    <div>
+                        {elfMeta.programHeaders.map((phdr, i) => (
+                            <table key={i} className="table">
+                                <tbody>
+                                    {phdr.map(({ bytes, name, offset }) => (
+                                        <tr key={offset}>
+                                            <td>{offset}</td>
+                                            <td>{name}</td>
+                                            {/* <td>{formatBytes(bytes)}</td> */}
+                                            <td>{formatBytes(bytes)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        ))}
+                    </div>
                 </div>
             </div>
             <hr />
-            <table>
-                <tbody>
-                    {Object.entries(elfData2).map(([k, v]) => (
-                        <tr key={k}>
-                            <td>{k}:</td>
-                            <td>{v}</td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
+            <ByteTable />
+            <hr />
         </div>
+    );
+}
+
+function ByteTable() {
+    return (
+        <table>
+            <tbody>
+                <tr>
+                    <td>Instructions</td>
+                    <td>Bytes</td>
+                </tr>
+            </tbody>
+        </table>
     );
 }
