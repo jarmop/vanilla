@@ -1,0 +1,22 @@
+.window {
+    padding: 10px;
+    /* border: 1px solid #777;
+    border-width: 0 1px 0 0; */
+    /* border-bottom: 1px solid #222; */
+    /* border-right: 1px solid #222; */
+    font-family: monospace;
+    /* background: #fafafa; */
+    /* background: white; */
+}
+
+.table {
+    border-collapse: collapse;
+    td {
+        font-size: 14px;
+        border: 1px solid #c7c7c7;
+        /* color: #222; */
+        /* border: 1px solid #ddd; */
+        border-width: 0 0 1px 0;
+        padding: 0px 8px;
+    }
+}
