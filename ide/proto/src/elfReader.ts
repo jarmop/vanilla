@@ -37,6 +37,16 @@ const elfStructures = {
         40: [8, "p_memsz"],
         48: [8, "p_align"],
     },
+    shdr64: {
+        0: [4, "sh_name"],
+        4: [4, "sh_type"],
+        8: [8, "sh_flags"],
+        16: [8, "sh_addr"],
+        24: [8, "sh_offset"],
+        32: [8, "sh_size"],
+        40: [8, "sh_addralign"],
+        48: [8, "sh_entsize"],
+    },
 } as const;
 
 type ElfStructures = typeof elfStructures;
@@ -111,7 +121,7 @@ export function bytesToNum(bytes: number[]) {
     return parseInt(hex, 16);
 }
 
-function getValue(data: ElfData[], field: string) {
+export function getValue(data: ElfData[], field: string) {
     const bytes = data.find((d) => d.name == field)?.bytes || [];
     // const hex = bytes.map((b) => leftPad(b.toString(16), 2)).join("");
     // const num = parseInt(hex, 16);
@@ -125,6 +135,7 @@ const startOfProgramHeaders = getValue(ehdr, "e_phoff");
 const programHeaderSize = getValue(ehdr, "e_phentsize");
 const numberOfProgramHeaders = getValue(ehdr, "e_phnum");
 const startOfSectionHeaders = getValue(ehdr, "e_shoff");
+const sectionHeaderSize = getValue(ehdr, "e_shentsize");
 const numberOfSectionHeaders = getValue(ehdr, "e_shnum");
 
 const phdr = parseElf(elfStructures.phdr64, elfHeaderSize);
@@ -134,34 +145,31 @@ const phdr = parseElf(elfStructures.phdr64, elfHeaderSize);
 // console.log(phdr2);
 
 const programHeaders = [];
-let ptOffset = elfHeaderSize;
+let phOffset = startOfProgramHeaders;
 for (let i = 0; i < numberOfProgramHeaders; i++) {
-    programHeaders.push(parseElf(elfStructures.phdr64, ptOffset));
-    ptOffset += programHeaderSize;
+    programHeaders.push(parseElf(elfStructures.phdr64, phOffset));
+    phOffset += programHeaderSize;
+}
+const sectionHeaders = [];
+let shoffset = startOfSectionHeaders;
+for (let i = 0; i < numberOfSectionHeaders; i++) {
+    sectionHeaders.push(parseElf(elfStructures.shdr64, shoffset));
+    shoffset += sectionHeaderSize;
 }
 
-const foo = programHeaders.filter((phdr) => {
-    return getValue(phdr, "p_type") == 1;
-});
-console.log(foo);
-
-const e_entry = getValue(ehdr, "e_entry");
-const p_offset = getValue(phdr, "p_offset");
-const p_vaddr = getValue(phdr, "p_vaddr");
-// Have to check that the PT_LOAD = 1 (Loadable segment)
-const codeOffset = p_offset + (e_entry - p_vaddr);
-const codeSize = getValue(phdr, "p_filesz");
-
 export const elfMeta = {
-    codeOffset,
-    codeSize,
+    // codeOffset,
+    // codeSize,
     ehdr,
-    phdr,
+    // phdr,
     programHeaders,
+    sectionHeaders,
     startOfProgramHeaders,
     numberOfProgramHeaders,
+    programHeaderSize,
     startOfSectionHeaders,
     numberOfSectionHeaders,
+    sectionHeaderSize,
 };
 
 // const instructions = bytes
