@@ -51,16 +51,24 @@ const headerFieldsList = {
 
 type HeaderFieldsList = typeof headerFieldsList;
 type HeaderFields = HeaderFieldsList[keyof HeaderFieldsList];
+type HdrFieldNames = HeaderFields[number][1];
+type EhdrFieldNames = HeaderFieldsList["ehdr64"][number][1];
+type PhdrFieldNames = HeaderFieldsList["phdr64"][number][1];
+type ShdrFieldNames = HeaderFieldsList["shdr64"][number][1];
 
 const isLittleEndian = bytes[5] == 1;
 
-export function bytesToNum(bytes: number[]) {
+export function bytesToNum(bytes: number[]): number {
     const hex = bytes.map((b) => leftPad(b.toString(16), 2)).join("");
     return parseInt(hex, 16);
 }
 
-function parseElf2(hdrFields: HeaderFields, offset = 0) {
+function parseElf2<T extends HdrFieldNames>(
+    hdrFields: HeaderFields,
+    offset = 0,
+) {
     const hdr: ElfData[] = [];
+    const hdrMap: Record<T, number> = {} as Record<T, number>;
     hdrFields.forEach(([size, name]) => {
         const value = bytes.slice(offset, offset + size);
         if (isLittleEndian) {
@@ -71,10 +79,11 @@ function parseElf2(hdrFields: HeaderFields, offset = 0) {
             offset,
             bytes: value,
         });
+        hdrMap[name as T] = bytesToNum(value);
         offset += size;
     });
 
-    return hdr;
+    return { hdr, hdrMap };
 }
 
 export type ElfData = {
@@ -88,7 +97,9 @@ export function getValue(data: ElfData[], field: string) {
     return bytesToNum(bytes);
 }
 
-const elfHeader = parseElf2(headerFieldsList.ehdr64);
+const { hdr: elfHeader, hdrMap: elfHeaderMap } = parseElf2<EhdrFieldNames>(
+    headerFieldsList.ehdr64,
+);
 const startOfProgramHeaders = getValue(elfHeader, "e_phoff");
 const programHeaderSize = getValue(elfHeader, "e_phentsize");
 const numberOfProgramHeaders = getValue(elfHeader, "e_phnum");
@@ -97,22 +108,63 @@ const sectionHeaderSize = getValue(elfHeader, "e_shentsize");
 const numberOfSectionHeaders = getValue(elfHeader, "e_shnum");
 
 const programHeaders = [];
+const programHeaderMaps = [];
 let phOffset = startOfProgramHeaders;
 for (let i = 0; i < numberOfProgramHeaders; i++) {
-    programHeaders.push(parseElf2(headerFieldsList.phdr64, phOffset));
+    const { hdr, hdrMap } = parseElf2<PhdrFieldNames>(
+        headerFieldsList.phdr64,
+        phOffset,
+    );
+    programHeaders.push(hdr);
+    programHeaderMaps.push(hdrMap);
     phOffset += programHeaderSize;
 }
 const sectionHeaders = [];
+const sectionHeaderMaps = [];
 let shoffset = startOfSectionHeaders;
 for (let i = 0; i < numberOfSectionHeaders; i++) {
-    sectionHeaders.push(parseElf2(headerFieldsList.shdr64, shoffset));
+    const { hdr, hdrMap } = parseElf2<ShdrFieldNames>(
+        headerFieldsList.shdr64,
+        shoffset,
+    );
+    sectionHeaders.push(hdr);
+    sectionHeaderMaps.push(hdrMap);
     shoffset += sectionHeaderSize;
 }
 
+// const elfHeaderMap: Record<string, number> = elfHeader.reduce((acc, curr) => {
+//     acc[curr.name] = bytesToNum(curr.bytes);
+//     return acc;
+// }, {} as Record<string, number>);
+
+// function arrToMap<T extends Record<K, number[]>, K extends string>(
+// function arrToMap(
+//     arr: ElfData[],
+// ) {
+//     const dataMap: Record<string, number> = {};
+//     arr.forEach(({ name, bytes }) => dataMap[name] = bytesToNum(bytes));
+//     return dataMap;
+// }
+
+// const elfHeaderMap: Record<string, number> = arrToMap(elfHeader);
+// const elfHeaderMap: Record<string, number> = {};
+// elfHeader.forEach(({ name, bytes }) => elfHeaderMap[name] = bytesToNum(bytes));
+
+// type ProgramHeaderFields = headerFieldsList.phdr64
+
+// const prkl = ["a", "b"] as const;
+// type ProgramHeaderMap = Record<typeof prkl[number], string>;
+// const prk: ProgramHeaderMap = {};
+
+// const programHeaderMaps = programHeaders.map(arrToMap);
+
 export const elfMeta = {
     elfHeader,
+    elfHeaderMap,
     programHeaders,
+    programHeaderMaps,
     sectionHeaders,
+    sectionHeaderMaps,
     startOfProgramHeaders,
     numberOfProgramHeaders,
     programHeaderSize,

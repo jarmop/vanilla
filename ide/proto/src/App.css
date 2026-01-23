@@ -1,3 +1,7 @@
+:root {
+    --border-color: #ddd;
+}
+
 .window {
     padding: 10px;
     /* border: 1px solid #777;
@@ -13,10 +17,44 @@
     border-collapse: collapse;
     font-size: 14px;
     td, th {
-        border: 1px solid #c7c7c7;
+        /* border: 1px solid #c7c7c7; */
         /* color: #222; */
         border: 1px solid #ddd;
         /* border-width: 0 0 1px 0; */
         padding: 0px 8px;
+    }
+}
+
+.BytesViewTable {
+    font-size: 14px;
+    /* font-family: monospace; */
+    border-collapse: collapse;
+    td {
+        vertical-align: top;
+        padding: 0px 8px;
+        border: 1px solid #c7c7c7;
+        border-width: 0 1px;
+        white-space: nowrap;
+    }
+
+    tbody {
+        /* border: 1px solid #c7c7c7;
+        border-width: 0 0 1px 0; */
+        padding: 10px;
+    }
+
+    .mono {
+        font-family: monospace;
+        font-size: 12px;
+    }
+}
+
+.BytesDivider {
+    td {
+        padding: 0;
+    }
+    hr {
+        border-color: var(--border-color);
+        border-width: 0 0 1px 0;
     }
 }
