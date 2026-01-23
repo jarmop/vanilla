@@ -189,7 +189,7 @@ function explPType(pType: number) {
         3: "Interpreter information",
         4: "Auxiliary information",
         5: "Reserved",
-        6: "Contains phdr table",
+        6: "Self-defining phdr",
         7: "Thread-Local Storage template.",
     };
     const expl = pTypeMap[pType];
@@ -213,7 +213,8 @@ function ProgramHeaders() {
                 }, 0)} bytes
             </div>
             <SubHeaders
-                hdrs={elfMeta.programHeaders.sort(byField("p_type"))}
+                // hdrs={elfMeta.programHeaders.sort(byField("p_type"))}
+                hdrs={elfMeta.programHeaders}
                 explType={(phdr: ElfData[]) =>
                     explPType(getValue(phdr, "p_type"))}
             />
@@ -276,7 +277,7 @@ interface SubHeadersProps {
 }
 
 function SubHeaders({ hdrs, explType }: SubHeadersProps) {
-    const fields = hdrs[0].map(({ name }) => name);
+    const fields = (hdrs?.[0] || []).map(({ name }) => name);
     return (
         <table className="table">
             <thead>
