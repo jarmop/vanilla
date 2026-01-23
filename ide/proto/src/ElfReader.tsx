@@ -1,23 +1,7 @@
 import { bytesToNum, type ElfData, elfMeta, getValue } from "./elfReader";
 
-// type ElfField = {
-//     offset: number; // bytes
-//     size: number; // bytes
-// };
-
-// const ELF = { ehdr: [{}] };
-
-// const ELF_MAGIC = [127, 69, 76, 70];
-
-// function isElf(bytes: number[]) {
-//     return bytes.slice(0, 4).every((byte, i) => byte === ELF_MAGIC[i]);
-// }
-
 function formatBytes(bytes: number[]) {
     return "0x" + bytesToNum(bytes).toString(16);
-    // return bytes
-    //     .map((b) => leftPad(b.toString(16), 2))
-    //     .join(" ");
 }
 
 export function ElfReader() {
@@ -51,7 +35,7 @@ function KeyInformation() {
         ],
         [
             "Number of section headers",
-            elfMeta.numberOfSectionHeaders.toString(16),
+            elfMeta.numberOfSectionHeaders,
         ],
         [
             "Total size of section headers",
@@ -70,18 +54,16 @@ function KeyInformation() {
 
     const phdrOffsetInfo: [number, number][] = elfMeta.programHeaders.filter((
         phdr,
-    ) => getValue(phdr, "p_type") == 1 // && getValue(phdr, "p_filesz") > 0
-    ).sort(byField("p_offset"))
+    ) => getValue(phdr, "p_type") == 1).sort(byField("p_offset"))
         .map((phdr) => {
             const isExecutable = getValue(phdr, "p_flags") & 1;
             const p_offset = getValue(phdr, "p_offset");
             const p_vaddr = getValue(phdr, "p_vaddr");
-            const e_entry = getValue(elfMeta.ehdr, "e_entry");
+            const e_entry = getValue(elfMeta.elfHeader, "e_entry");
             const realOffset = isExecutable
                 ? p_offset + (e_entry - p_vaddr)
                 : p_offset;
             return [
-                // e_entry + p_offset,
                 realOffset,
                 getValue(phdr, "p_filesz"),
             ];
@@ -120,7 +102,7 @@ function KeyInformation() {
             {executableSegments.map((phdr) => {
                 const p_offset = getValue(phdr, "p_offset");
                 const p_vaddr = getValue(phdr, "p_vaddr");
-                const e_entry = getValue(elfMeta.ehdr, "e_entry");
+                const e_entry = getValue(elfMeta.elfHeader, "e_entry");
                 const realOffset = p_offset + e_entry - p_vaddr;
                 return (
                     <div key={p_offset}>
@@ -150,9 +132,6 @@ function OffsetGrid({ offsetInfo }: { offsetInfo: [number, number][] }) {
             style={{
                 display: "flex",
                 flexWrap: "wrap",
-                // display: "grid",
-                // gridTemplateColumns: "repeat(auto-fill, 120px)",
-                // gap: "5px",
             }}
         >
             {offsetInfo.map(
@@ -166,7 +145,6 @@ function OffsetGrid({ offsetInfo }: { offsetInfo: [number, number][] }) {
                                 padding: "5px",
                                 margin: "3px",
                                 fontSize: "14px",
-                                // width: "100px",
                             }}
                         >
                             {bytesToNum([offset])} -{" "}
@@ -181,21 +159,14 @@ function OffsetGrid({ offsetInfo }: { offsetInfo: [number, number][] }) {
 
 function ElfHeader() {
     return (
-        <div
-            // style={{
-            //     borderRight: "1px solid black",
-            //     marginRight: "10px",
-            //     paddingRight: "10px",
-            // }}
-        >
+        <div>
             <h3>ELF header</h3>
             <table className="table">
                 <tbody>
-                    {elfMeta.ehdr.map(({ bytes, name, offset }) => (
+                    {elfMeta.elfHeader.map(({ bytes, name, offset }) => (
                         <tr key={offset}>
                             <td>{offset}</td>
                             <td>{name}</td>
-                            {/* <td>{formatBytes(bytes)}</td> */}
                             <td>{formatBytes(bytes)}</td>
                         </tr>
                     ))}
@@ -241,52 +212,11 @@ function ProgramHeaders() {
                     return acc + getValue(phdr, "p_filesz");
                 }, 0)} bytes
             </div>
-            <div
-                style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(6, 1fr)",
-                    gap: "10px",
-                    // background: "#c7c7c7",
-                    // background: "#eee",
-                }}
-            >
-                {elfMeta.programHeaders.sort(byField("p_type")).map((
-                    phdr,
-                    i,
-                ) => (
-                    <div
-                        key={i}
-                        style={{
-                            padding: "4px",
-                            background: "#f7f7f7",
-                            border: "1px solid #c7c7c7",
-                        }}
-                    >
-                        <div style={{ marginBottom: "4px" }}>
-                            {explPType(getValue(phdr, "p_type"))}
-                        </div>
-                        <table
-                            key={i}
-                            className="table"
-                            style={{
-                                background: "white",
-                                width: "100%",
-                            }}
-                        >
-                            <tbody>
-                                {phdr.map(({ bytes, name, offset }) => (
-                                    <tr key={offset}>
-                                        <td>{offset}</td>
-                                        <td>{name}</td>
-                                        {/* <td>{formatBytes(bytes)}</td> */}
-                                        <td>{bytesToNum(bytes)}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                ))}
-            </div>
+            <SubHeaders
+                hdrs={elfMeta.programHeaders.sort(byField("p_type"))}
+                explType={(phdr: ElfData[]) =>
+                    explPType(getValue(phdr, "p_type"))}
+            />
         </div>
     );
 }
@@ -331,78 +261,37 @@ function SectionHeaders() {
                     return acc + getValue(shdr, "sh_size");
                 }, 0)} bytes
             </div>
-            <div
-                style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(6, 1fr)",
-                    gap: "10px",
-                    // background: "#c7c7c7",
-                    // background: "#eee",
-                }}
-            >
-                {elfMeta.sectionHeaders.sort(byField("sh_offset")).map((
-                    shdr,
-                    i,
-                ) => (
-                    <div
-                        key={i}
-                        style={{
-                            padding: "4px",
-                            background: "#f7f7f7",
-                            border: "1px solid #c7c7c7",
-                        }}
-                    >
-                        <div style={{ marginBottom: "4px" }}>
-                            {explShType(getValue(shdr, "sh_type"))}
-                        </div>
-                        <table
-                            key={i}
-                            className="table"
-                            style={{
-                                background: "white",
-                                width: "100%",
-                            }}
-                        >
-                            <tbody>
-                                {shdr.map(({ bytes, name, offset }) => (
-                                    <tr key={offset}>
-                                        <td>{offset}</td>
-                                        <td>{name}</td>
-                                        {/* <td>{formatBytes(bytes)}</td> */}
-                                        <td>{formatBytes(bytes)}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                ))}
-            </div>
+            <SubHeaders
+                hdrs={elfMeta.sectionHeaders.sort(byField("sh_offset"))}
+                explType={(shdr: ElfData[]) =>
+                    explShType(getValue(shdr, "sh_type"))}
+            />
         </div>
     );
 }
 
-function TypeCount() {
-    const typeCounts: Record<number, number> = {};
-    elfMeta.sectionHeaders.forEach((shdr) => {
-        const type = getValue(shdr, "sh_type");
-        if (!typeCounts[type]) {
-            typeCounts[type] = 0;
-        }
-        typeCounts[type]++;
-    });
+interface SubHeadersProps {
+    hdrs: ElfData[][];
+    explType: (hdr: ElfData[]) => string;
+}
 
+function SubHeaders({ hdrs, explType }: SubHeadersProps) {
+    const fields = hdrs[0].map(({ name }) => name);
     return (
-        <table>
+        <table className="table">
+            <thead>
+                <tr>
+                    <th>p_type explained</th>
+                    {fields.map((f) => <th key={f}>{f}</th>)}
+                </tr>
+            </thead>
             <tbody>
-                {Object
-                    .entries(typeCounts)
-                    .sort(([_a, a], [_b, b]) => b - a) // sort by size
-                    .map(([k, v]) => (
-                        <tr>
-                            <td>{explShType(parseInt(k))}</td>
-                            <td>{v}</td>
-                        </tr>
-                    ))}
+                {hdrs.map((hdr, i) => (
+                    <tr key={i}>
+                        <td>{explType(hdr)}</td>
+                        {fields.map((f) => <td key={f}>{getValue(hdr, f)}</td>)}
+                    </tr>
+                ))}
             </tbody>
         </table>
     );
