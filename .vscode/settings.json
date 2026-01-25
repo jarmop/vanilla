@@ -9,5 +9,8 @@
     "rust-analyzer.inlayHints.renderColons": false,
     "rust-analyzer.inlayHints.closingBraceHints.enable": false,
     "rust-analyzer.inlayHints.expressionAdjustmentHints.disableReborrows": false,
-    "rust-analyzer.inlayHints.parameterHints.enable": false
+    "rust-analyzer.inlayHints.parameterHints.enable": false,
+    "[c]": {
+        "editor.formatOnSave": false
+    }
 }

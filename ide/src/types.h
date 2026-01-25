@@ -1,12 +1,9 @@
-#ifndef IDE_H
-#define IDE_H
-
-#include "xdg-shell-client-protocol.h"
+#ifndef TYPES_H
+#define TYPES_H
 
 // ------------------------- shm buffer wrapper -------------------------
 
 struct shm_buffer {
-    struct wl_buffer *buffer;
     void *data;
     int width, height;
     int stride;
