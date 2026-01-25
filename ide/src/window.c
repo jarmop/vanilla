@@ -11,38 +11,48 @@
 
 #include "xdg-shell-client-protocol.h"
 
-#include "ide.h"
-#include "draw.h"
+#include "types.h"
 
 static struct wl_compositor *compositor;
 static struct wl_shm *shm;
 static struct xdg_wm_base *wm_base;
 struct wl_surface *surface;
+
+// Buffer is apparently communicated between server and client via wl_buffer
+// but the actual buffer data is inside our custom shm_buffer struct
+static struct wl_buffer *wlbuffer;
 struct shm_buffer buf;
 
 // Configuration state
 static int configured = 0;
 const int initial_width = 800;
 const int initial_height = 1000;
+
+// Two variables for each dimension to compare on server event, so we 
+// know not to redraw if the size has not actually changed.
 static int width = initial_width;
 static int height = initial_height;
 static int new_width = initial_width;
 static int new_height = initial_height;
 
+static void (*draw_cb)(struct shm_buffer *buf);
+
 static void __buffer_destroy(struct shm_buffer *buf) {
     if (!buf) return;
-    if (buf->buffer) wl_buffer_destroy(buf->buffer);
+    if (wlbuffer) wl_buffer_destroy(wlbuffer);
     if (buf->data && buf->size > 0) munmap(buf->data, (size_t)buf->size);
     memset(buf, 0, sizeof(*buf));
 }
 
 static int __buffer_create(struct shm_buffer *buf, int width, int height) {
+    // Initialize the buffer with zeros
     memset(buf, 0, sizeof(*buf));
-    buf->width = width;
-    buf->height = height;
-    buf->stride = width * 4;
-    buf->size = buf->stride * height;
+    buf->width = width; // in pixels
+    buf->height = height; // in pixels
+    buf->stride = width * 4; // Width in bytes (XRGB = 4 bytes)
+    buf->size = buf->stride * height; // Total size in bytes
 
+    // Create a file (descriptor) to map the buffer to
     int fd = memfd_create("shm-buffer", 0);
     if (fd < 0) {
         perror("memfd_create");
@@ -66,12 +76,12 @@ static int __buffer_create(struct shm_buffer *buf, int width, int height) {
     // Wayland has what it needs from fd via the pool; safe to close now.
     close(fd);
 
-    buf->buffer = wl_shm_pool_create_buffer(
+    wlbuffer = wl_shm_pool_create_buffer(
         pool, 0, width, height, buf->stride, WL_SHM_FORMAT_XRGB8888
     );
     wl_shm_pool_destroy(pool);
 
-    if (!buf->buffer) {
+    if (!wlbuffer) {
         fprintf(stderr, "wl_shm_pool_create_buffer failed\n");
         munmap(buf->data, (size_t)buf->size);
         buf->data = NULL;
@@ -118,13 +128,16 @@ static const struct wl_registry_listener registry_listener = {
     .global_remove = __registry_remove
 };
 
-static void resize_window(int width, int height) {
+static void recreate_buffer(int width, int height) {
     __buffer_destroy(&buf);
-    __buffer_create(&buf, width, height);
+    if (__buffer_create(&buf, width, height) != 0) {
+        fprintf(stderr, "Failed to create buffer\n");
+        exit(1);
+    }
 
-    draw(&buf);
+    draw_cb(&buf);
 
-    wl_surface_attach(surface, buf.buffer, 0, 0);
+    wl_surface_attach(surface, wlbuffer, 0, 0);
     wl_surface_damage_buffer(surface, 0, 0, width, height);
     wl_surface_commit(surface);
 }
@@ -141,7 +154,7 @@ static void __xdg_surface_configure(
         && new_height > 0
         && (new_width != width || new_height != height)
     ) {
-        resize_window(new_width, new_height);
+        recreate_buffer(new_width, new_height);
         width = new_width; height = new_height;
     }
 }
@@ -168,7 +181,10 @@ static const struct xdg_toplevel_listener xdg_toplevel_listener = {
     .close = NULL,
 };
 
-int main(int argc, char **argv) {
+
+int initialize_wayland(void (*draw_cb_arg)(struct shm_buffer *buf)) {
+    draw_cb = draw_cb_arg;
+
     /**
      * Get display from the compositor. Passing NULL as the display name, so
      * we get the default "wayland-0".
@@ -198,24 +214,14 @@ int main(int argc, char **argv) {
     xdg_surface_add_listener(xdg_surface, &xdg_surface_listener, NULL);
     struct xdg_toplevel *toplevel = xdg_surface_get_toplevel(xdg_surface);
     xdg_toplevel_add_listener(toplevel, &xdg_toplevel_listener, NULL);
-    xdg_toplevel_set_title(toplevel, "Wayland + FreeType (ASCII)");
+    xdg_toplevel_set_title(toplevel, "IDE");
     wl_surface_commit(surface);
 
     while (!configured) {
         wl_display_dispatch(display);
     }
 
-    // ---------- Create shm buffer sized from configure ----------
-    if (__buffer_create(&buf, width, height) != 0) {
-        return 1;
-    }
-
-    initialize_draw();
-    draw(&buf);
-
-    wl_surface_attach(surface, buf.buffer, 0, 0);
-    wl_surface_damage_buffer(surface, 0, 0, buf.width, buf.height);
-    wl_surface_commit(surface);
+    recreate_buffer(width, height);
 
     // Simple event loop (static image)
     while (wl_display_dispatch(display)) {

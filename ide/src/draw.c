@@ -116,7 +116,7 @@ FT_Library ft;
 FT_Face face;
 
 int initialize_draw() {
-        // Font path: pass as argv[1], otherwise use a common default on many Linux distros.
+    // Font path: pass as argv[1], otherwise use a common default on many Linux distros.
     const char *font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf";
     
     if (FT_Init_FreeType(&ft) != 0) {
