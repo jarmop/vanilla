@@ -4,6 +4,6 @@
 #include "types.h"
 
 int initialize_draw();
-void draw(struct shm_buffer *buf);
+void draw(struct shm_buffer *buf, const char *text);
 
 #endif

@@ -1,54 +1,42 @@
+#include <stdio.h>
+#include <string.h>
 #include "window.h"
 #include "draw.h"
 
-// int get_elf()
-// {
-//     char *filename = "out.elf";
-//     FILE *file = fopen(filename, "rb");
-//     size_t n;
-//     unsigned char buffer[16];
-//     while ((n = fread(buffer, sizeof(*buffer), sizeof(buffer), file)) > 0)
-//     {
-//         for (size_t i = 0; i < n; i += 2)
-//         {
-//             printf("%02x%02x ", buffer[i], buffer[i + 1]);
-//         }
-//         printf("\n");
-//     }
+char text[128] = "B";
 
-//     return 0;
-// }
+recreate_buffer_cb_type recreate_buffer_cb;
 
-// Use this as the main function, call initialize_wayland or something
-// int main(int argc, char *argv[]) {
-//     if (argc < 2) {
-//         printf("Give filename\n");
-//         return 1;
-//     }
+static void key_cb(xkb_keysym_t key) {
+    const int text_len = strlen(text);
+    fprintf(stderr, "text length: %d\n", text_len);
 
-//     char *filename = argv[1];
-//     FILE *file = fopen(filename,"rb");
+    if (key == XKB_KEY_Return) {
+        text[text_len] = '\n';
+    } else if (key == XKB_KEY_BackSpace) {
+        // fprintf(stderr, "backspace:\n");
+        text[text_len - 1] = '\0';
+    } else {
+        text[text_len] = key;
+    }
+    text[text_len + 1] = '\0';
 
-//     size_t n;
-//     unsigned char buffer[16];
-//     while ((n = fread(buffer, sizeof(*buffer), sizeof(buffer), file)) > 0) {
-//         for(size_t i=0; i<n; i+=2) {
-//             printf("%02x%02x ", buffer[i], buffer[i+1]);
-//         }
-//         printf("\n");
-//     }
-
-//     return 0;
-// }
+    fprintf(stderr, "text: '%s'\n", text);
+    // fprintf(stderr, "text: %d, %d, %d, %d\n", text[0], text[1], text[2], text[3]);
+    recreate_buffer_cb();
+}
 
 static void draw_cb(struct shm_buffer *buf) {
-    draw(buf);
+    draw(buf, text);
 }
+
 
 int main() {
     initialize_draw();
 
-    initialize_wayland(&draw_cb);
+    recreate_buffer_cb = initialize_window(&draw_cb, &key_cb);
+
+    run_window();
 
     return 0;
 }

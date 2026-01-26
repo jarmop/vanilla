@@ -12,11 +12,13 @@
 #include "xdg-shell-client-protocol.h"
 
 #include "types.h"
+#include "window.h"
 
 static struct wl_compositor *compositor;
 static struct wl_shm *shm;
 static struct xdg_wm_base *wm_base;
-struct wl_surface *surface;
+static struct wl_surface *surface;
+static struct wl_seat *seat;
 
 // Buffer is apparently communicated between server and client via wl_buffer
 // but the actual buffer data is inside our custom shm_buffer struct
@@ -36,6 +38,9 @@ static int new_width = initial_width;
 static int new_height = initial_height;
 
 static void (*draw_cb)(struct shm_buffer *buf);
+static void (*key_cb)(xkb_keysym_t key);
+
+// ============================= BUFFER HANDLING ==============================
 
 static void __buffer_destroy(struct shm_buffer *buf) {
     if (!buf) return;
@@ -91,6 +96,26 @@ static int __buffer_create(struct shm_buffer *buf, int width, int height) {
     return 0;
 }
 
+static void recreate_buffer(int width, int height) {
+    __buffer_destroy(&buf);
+    if (__buffer_create(&buf, width, height) != 0) {
+        fprintf(stderr, "Failed to create buffer\n");
+        exit(1);
+    }
+
+    draw_cb(&buf);
+
+    wl_surface_attach(surface, wlbuffer, 0, 0);
+    wl_surface_damage_buffer(surface, 0, 0, width, height);
+    wl_surface_commit(surface);
+}
+
+static void recreate_buffer_cb() {
+    recreate_buffer(width, height);
+}
+
+// ============================ REGISTRY LISTENER ============================
+
 static void __xdg_wm_base_ping(
     void *data,
     struct xdg_wm_base *xdg_wm_base,
@@ -103,6 +128,33 @@ static const struct xdg_wm_base_listener xdg_wm_base_listener = {
     .ping = __xdg_wm_base_ping,
 };
 
+static const uint8_t capability_pointer = 1 << 0;
+static const uint8_t capability_keyboard = 1 << 1;
+static const uint8_t capability_touch = 1 << 2;
+static uint8_t capabilities = 0;
+
+static void __seat_capabilities(
+    void *data,
+	struct wl_seat *wl_seat,
+	uint32_t new_capabilities
+) {
+    fprintf(stderr, "received seat capabilities: %d\n", new_capabilities);
+    seat = wl_seat;
+    capabilities = new_capabilities; 
+}
+
+ static void __seat_name(
+    void *data,
+	struct wl_seat *wl_seat,
+	const char *name
+ ) {
+    fprintf(stderr, "received seat name: %s\n", name);
+ }
+
+static const struct wl_seat_listener seat_listener = {
+    .capabilities = __seat_capabilities,
+    .name = __seat_name,
+};
 
 static void __registry_handler(
     void *data,
@@ -118,6 +170,9 @@ static void __registry_handler(
     } else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
         wm_base = wl_registry_bind(registry, id, &xdg_wm_base_interface, 1);
         xdg_wm_base_add_listener(wm_base, &xdg_wm_base_listener, NULL);
+    } else if (strcmp(interface, wl_seat_interface.name) == 0) {
+        seat = wl_registry_bind(registry, id, &wl_seat_interface, 7);
+        wl_seat_add_listener(seat, &seat_listener, NULL);
     }
 }
 
@@ -128,19 +183,7 @@ static const struct wl_registry_listener registry_listener = {
     .global_remove = __registry_remove
 };
 
-static void recreate_buffer(int width, int height) {
-    __buffer_destroy(&buf);
-    if (__buffer_create(&buf, width, height) != 0) {
-        fprintf(stderr, "Failed to create buffer\n");
-        exit(1);
-    }
-
-    draw_cb(&buf);
-
-    wl_surface_attach(surface, wlbuffer, 0, 0);
-    wl_surface_damage_buffer(surface, 0, 0, width, height);
-    wl_surface_commit(surface);
-}
+// =========================== XDG SURFACE LISTENER ===========================
 
 static void __xdg_surface_configure(
     void *data, 
@@ -163,6 +206,8 @@ static const struct xdg_surface_listener xdg_surface_listener = {
     .configure = __xdg_surface_configure,
 };
 
+// ========================== XDG TOPLEVEL LISTENER ===========================
+
 static void __xdg_toplevel_configure(
     void *data,
     struct xdg_toplevel *toplevel,
@@ -181,18 +226,126 @@ static const struct xdg_toplevel_listener xdg_toplevel_listener = {
     .close = NULL,
 };
 
+// ================================== INPUT ===================================
 
-int initialize_wayland(void (*draw_cb_arg)(struct shm_buffer *buf)) {
+#define xkb_keycode_offset 8
+
+struct xkb_context *key_ctx;
+struct xkb_keymap *key_keymap;
+struct xkb_state *key_state;
+
+static void __keyboard_keymap(
+    void *data,
+	struct wl_keyboard *keyboard,
+	uint32_t format,
+	int32_t fd,
+	uint32_t size
+) {
+    fprintf(stderr, "__keyboard_keymap\n");
+
+    char *map_shm = mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
+    key_keymap = xkb_keymap_new_from_string(
+        key_ctx, map_shm, XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS
+    );
+    key_state = xkb_state_new(key_keymap);
+    munmap(map_shm, size);
+    close(fd);
+}
+
+static void __keyboard_enter(
+    void *data,
+	struct wl_keyboard *wl_keyboard,
+	uint32_t serial,
+	struct wl_surface *surface,
+	struct wl_array *keys
+) {
+    fprintf(stderr, "__keyboard_enter\n");
+}
+
+static void __keyboard_leave(
+    void *data,
+	struct wl_keyboard *wl_keyboard,
+	uint32_t serial,
+	struct wl_surface *surface
+) {
+    fprintf(stderr, "__keyboard_leave\n");
+}
+
+static void __keyboard_key(
+    void *data,
+	struct wl_keyboard *wl_keyboard,
+	uint32_t serial,
+	uint32_t time,
+	uint32_t key,
+	uint32_t state
+) {
+    if (state != WL_KEYBOARD_KEY_STATE_PRESSED) {
+        return;
+    }
+
+    uint32_t keycode = key + xkb_keycode_offset;
+    xkb_keysym_t sym = xkb_state_key_get_one_sym(key_state, keycode);
+    char buf[128];
+    xkb_keysym_get_name(sym, buf, sizeof(buf));
+    // fprintf(stderr, "symbol name: %s (%d)\n", buf, sym);
+
+    key_cb(sym);
+}
+
+static void __keyboard_modifiers(
+    void *data,
+	struct wl_keyboard *wl_keyboard,
+	uint32_t serial,
+	uint32_t mods_depressed,
+	uint32_t mods_latched,
+	uint32_t mods_locked,
+    uint32_t group
+) {
+    fprintf(stderr, "__keyboard_modifiers\n");
+}
+
+static void __keyboard_repeat_info(
+    void *data,
+    struct wl_keyboard *wl_keyboard,
+    int32_t rate,
+    int32_t delay
+) {
+    fprintf(stderr, "__keyboard_repeat_info\n");
+}
+
+static const struct wl_keyboard_listener keyboard_listener = {
+    .keymap = __keyboard_keymap,
+    .enter = __keyboard_enter,
+    .leave = __keyboard_leave,
+    .key = __keyboard_key,
+    .modifiers = __keyboard_modifiers,
+    .repeat_info = __keyboard_repeat_info,
+};
+
+// ================================== PUBLIC ===================================
+
+struct wl_display *display;
+
+recreate_buffer_cb_type initialize_window(
+    void (*draw_cb_arg)(struct shm_buffer *buf),
+    void (*key_cb_arg)(xkb_keysym_t key)
+) {
     draw_cb = draw_cb_arg;
+    key_cb = key_cb_arg;
+ 
+    key_ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    if (!key_ctx) {
+        fprintf(stderr, "no xkb\n");
+    }
 
     /**
      * Get display from the compositor. Passing NULL as the display name, so
      * we get the default "wayland-0".
      */
-    struct wl_display *display = wl_display_connect(NULL);
+    display = wl_display_connect(NULL);
     if (!display) {
         fprintf(stderr, "No Wayland display\n");
-        return 1;
+        exit(1);
     }
 
     /**
@@ -204,9 +357,9 @@ int initialize_wayland(void (*draw_cb_arg)(struct shm_buffer *buf)) {
     wl_registry_add_listener(registry, &registry_listener, NULL);
     wl_display_roundtrip(display);
 
-    if (!compositor || !shm || !wm_base) {
+    if (!compositor || !shm || !wm_base || !seat) {
         fprintf(stderr, "Wayland globals missing\n");
-        return 1;
+        exit(1);
     }
 
     surface = wl_compositor_create_surface(compositor);
@@ -216,6 +369,9 @@ int initialize_wayland(void (*draw_cb_arg)(struct shm_buffer *buf)) {
     xdg_toplevel_add_listener(toplevel, &xdg_toplevel_listener, NULL);
     xdg_toplevel_set_title(toplevel, "IDE");
     wl_surface_commit(surface);
+    
+    struct  wl_keyboard *keyboard = wl_seat_get_keyboard(seat);
+    wl_keyboard_add_listener(keyboard, &keyboard_listener, NULL);
 
     while (!configured) {
         wl_display_dispatch(display);
@@ -223,11 +379,14 @@ int initialize_wayland(void (*draw_cb_arg)(struct shm_buffer *buf)) {
 
     recreate_buffer(width, height);
 
-    // Simple event loop (static image)
+    return &recreate_buffer_cb;
+}
+
+
+int run_window() {
     while (wl_display_dispatch(display)) {
     }
 
-    // Cleanup (won't be reached in this trivial loop unless display disconnects)
     __buffer_destroy(&buf);
 
     return 0;
