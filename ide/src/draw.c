@@ -3,11 +3,11 @@
 #include FT_FREETYPE_H
 #include "draw.h"
 
-static void fill_solid_xrgb(struct shm_buffer *buf, uint32_t xrgb) {
-    uint32_t *p = (uint32_t*)buf->data;
-    int n = buf->width * buf->height;
-    for (int i = 0; i < n; i++) p[i] = xrgb;
-}
+// static void fill_solid_xrgb(struct shm_buffer *buf, uint32_t xrgb) {
+//     uint32_t *p = (uint32_t*)buf->data;
+//     int n = buf->width * buf->height;
+//     for (int i = 0; i < n; i++) p[i] = xrgb;
+// }
 
 // create the 32-bit XRGB8888 representation of the pixel
 static inline uint32_t pack_xrgb(uint8_t r, uint8_t g, uint8_t b) {
@@ -138,16 +138,19 @@ int initialize_draw() {
     return 0;
 }
 
-void draw(struct shm_buffer *buf) {
+void draw(struct shm_buffer *buf, const char *text) {
     // Background + text
-    fill_solid_xrgb(buf, pack_xrgb(0x00, 0x00, 0x00));
+    // fill_solid_xrgb(buf, pack_xrgb(0x00, 0x00, 0x00));
+
+    // fprintf(stderr, "draw: %s\n", text);
 
     draw_ascii_text_freetype(
         buf, 
         face, 
         20, 
         50,  
-        "ABCDEFGHIJKLMNOPQRSUVWXYZ\nabcdefghijklmnopqrstuvwxyz",
+        // "ABCDEFGHIJKLMNOPQRSUVWXYZ\nabcdefghijklmnopqrstuvwxyz",
+        text,
         0xBB, 
         0xBB, 
         0xBB
