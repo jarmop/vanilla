@@ -12,5 +12,6 @@
     "rust-analyzer.inlayHints.parameterHints.enable": false,
     "[c]": {
         "editor.formatOnSave": false
-    }
+    },
+    "javascript.autoClosingTags": false
 }
