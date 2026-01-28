@@ -1,3 +1,4 @@
 *.pem
 a.out
 bin
+*.o
