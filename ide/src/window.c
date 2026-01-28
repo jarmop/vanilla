@@ -271,6 +271,24 @@ static void __keyboard_leave(
     fprintf(stderr, "__keyboard_leave\n");
 }
 
+const int isModiferKey(xkb_keysym_t sym) {
+    const xkb_keysym_t modifiers[] = {
+        XKB_KEY_Shift_L,
+        XKB_KEY_Shift_R,
+        XKB_KEY_Alt_L,
+        XKB_KEY_Alt_R,
+        XKB_KEY_Control_L,
+        XKB_KEY_Control_R
+    };
+    int n = sizeof(modifiers) / sizeof(*modifiers);
+    for (int i = 0; i < n; n++) {
+        if (sym == modifiers[i]) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void __keyboard_key(
     void *data,
 	struct wl_keyboard *wl_keyboard,
@@ -285,9 +303,12 @@ static void __keyboard_key(
 
     uint32_t keycode = key + xkb_keycode_offset;
     xkb_keysym_t sym = xkb_state_key_get_one_sym(key_state, keycode);
-    char buf[128];
-    xkb_keysym_get_name(sym, buf, sizeof(buf));
+    // char buf[128];
+    // fprintf(stderr, "%d - %d - %d", keycode, sym, XKB_KEY_Return);
+
+    // xkb_keysym_get_name(sym, buf, sizeof(buf));
     // fprintf(stderr, "symbol name: %s (%d)\n", buf, sym);
+    // fprintf(stderr, " - %d\n", sym);
 
     key_cb(sym);
 }
@@ -302,6 +323,9 @@ static void __keyboard_modifiers(
     uint32_t group
 ) {
     fprintf(stderr, "__keyboard_modifiers\n");
+    xkb_state_update_mask(
+        key_state, mods_depressed, mods_latched, mods_locked, 0, 0, group
+    );
 }
 
 static void __keyboard_repeat_info(

@@ -3,18 +3,23 @@
 #include "window.h"
 #include "draw.h"
 
-char text[128] = "B";
+#define text_size 1024
+
+char text[text_size];
 
 recreate_buffer_cb_type recreate_buffer_cb;
 
 static void key_cb(xkb_keysym_t key) {
-    const int text_len = strlen(text);
-    fprintf(stderr, "text length: %d\n", text_len);
-
+    int text_len = strlen(text);
     if (key == XKB_KEY_Return) {
         text[text_len] = '\n';
+    } else if (key == XKB_KEY_Tab){
+        fprintf(stderr, "tab");
+        for (int i = 0; i < 2; i++) {
+            text[text_len + i] = ' ';
+        }
+        text_len+=3;
     } else if (key == XKB_KEY_BackSpace) {
-        // fprintf(stderr, "backspace:\n");
         text[text_len - 1] = '\0';
     } else {
         text[text_len] = key;
@@ -22,7 +27,6 @@ static void key_cb(xkb_keysym_t key) {
     text[text_len + 1] = '\0';
 
     fprintf(stderr, "text: '%s'\n", text);
-    // fprintf(stderr, "text: %d, %d, %d, %d\n", text[0], text[1], text[2], text[3]);
     recreate_buffer_cb();
 }
 
@@ -30,8 +34,13 @@ static void draw_cb(struct shm_buffer *buf) {
     draw(buf, text);
 }
 
-
 int main() {
+    FILE *file = fopen("proto/data/exit.c","rb");
+    size_t n;
+    while ((n = fread(text, sizeof(*text), sizeof(text), file)) > 0) {
+        printf("%s\n", text);
+    }
+
     initialize_draw();
 
     recreate_buffer_cb = initialize_window(&draw_cb, &key_cb);
