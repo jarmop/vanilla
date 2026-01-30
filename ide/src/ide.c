@@ -1,111 +1,134 @@
 #include <stdio.h>
+#include <stdlib.h> 
 #include <string.h>
+
+#include "types.h"
 #include "window.h"
 #include "draw.h"
 
-#define text_size 1024
-
-// char text[text_size];
-char text[text_size] = "0-2345678901234567890\n1-2345678901234567890\n2-2345678901234567890";
-int cursor_pos[] = {0, 0};
+char orig_text[] = "0-2345678901234567890\n1-2345678901234567890\n2-2345678901234567890";
+struct cursor cursor = {0, 0};
+struct text text;
 
 recreate_buffer_cb_type recreate_buffer_cb;
 
+static void initialize_text(char *o_text) {
+    int startofline = 0;
+    int li = 0;
+    int lsi = 0;
+    for (int i = 0; o_text[i] != '\0'; i++) {
+        if (o_text[i] == '\n' ) {
+            text.lines[lsi].length = li;
+            lsi++;
+            li = 0;
+            continue;
+        } 
+        text.lines[lsi].text[li] = o_text[i];
+        li++;
+    }
+    text.lines[lsi].length = li;
+    text.linecount = lsi + 1;
+
+    for (int i = 0; i <= text.linecount; i++) {
+        printf("%s\n", text.lines[i].text);
+    }
+}
+
 static void key_cb(xkb_keysym_t key) {
-    int text_len = strlen(text);
-    int cursor_col = cursor_pos[0];
-    int cursor_line = cursor_pos[1];
-
-    int linecount = 0;
-    int linelengths[1024] = {0};
-    int linelength = 0;
-    for (int i = 0; i < text_len; i++) {
-        if (text[i] == '\n') {
-            linelengths[linecount] = linelength;
-            linecount++;
-            linelength = 0;
-        } else {
-            linelength++;
-        }
-    }
-    linelengths[linecount] = linelength;
-
-    int ci = 0;
-    for (int l = 0; l < cursor_line; l++) {
-        // +1 = add newline character
-        ci += linelengths[l] + 1;
-    }
-    ci += cursor_col;
-
-    // fprintf(stderr, "linelengths: %d --> {%d, %d, %d, %d}\n", linecount, linelengths[0], linelengths[1], linelengths[2], linelengths[3]);
-    // fprintf(stderr, "cursor_col: %d\n", cursor_col);
-    // fprintf(stderr, "linelengths[cursor_line]: %d\n", linelengths[cursor_line]);
-    // fprintf(stderr, "ci: %d\n", ci);
     if (key == XKB_KEY_Left) {
-        cursor_pos[0] && cursor_pos[0]--;
+        cursor.col && cursor.col--;
     } else if (key == XKB_KEY_Right) {
-        (cursor_col != linelengths[cursor_line]) && cursor_pos[0]++;
+        (cursor.col < text.lines[cursor.row].length) && cursor.col++;
     } else if (key == XKB_KEY_Up) {
-        cursor_pos[1] && cursor_pos[1]--;
+        cursor.row && cursor.row--;
     } else if (key == XKB_KEY_Down) {
-        (cursor_line < linecount) && cursor_pos[1]++;
+        (cursor.row < text.linecount - 1) && cursor.row++;
     } else if (key == XKB_KEY_Next) {
-        cursor_pos[0] = linelengths[linecount];
-        cursor_pos[1] = linecount;
+        cursor.col = text.lines[text.linecount - 1].length;
+        cursor.row = text.linecount - 1;
     } else if (key == XKB_KEY_Prior) {
-        cursor_pos[0] = 0;
-        cursor_pos[1] = 0;
+        cursor.col = 0;
+        cursor.row = 0;
     } else if (key == XKB_KEY_Home) {
-        cursor_pos[0] = 0;
+        cursor.col = 0;
     } else if (key == XKB_KEY_End) {
-        cursor_pos[0] = linelengths[cursor_line];
+        cursor.col = text.lines[cursor.row].length;
     } else if (key == XKB_KEY_Return) {
-        // backup the text after cursor
-        char aft[1024];
-        strcpy(aft, text + ci);
-        text[ci] = '\n';
-        ci++;
-        cursor_pos[0] = 0;
-        cursor_pos[1]++;
-        // add the backupped text after the new character
-        strcpy(text + ci, aft);
+        struct line newline;
+        struct line *line = &text.lines[cursor.row];
+
+        // Split the current line into two
+        strcpy(newline.text, line->text + cursor.col);
+        newline.length = line->length - cursor.col;
+        line->text[cursor.col] = '\0';
+        line->length = cursor.col;
+
+        // Push the rest of the lines forward
+        for (int i = text.linecount; i > cursor.row; i--) {
+            text.lines[i + 1] = text.lines[i];
+        }
+
+        // Point the next line to the new line
+        text.lines[cursor.row + 1] = newline;
+        text.linecount++;
+        
+        cursor.col = 0;
+        cursor.row++;
     } else if (key == XKB_KEY_Tab){
         int tab_size = 2;
         char aft[1024];
-        strcpy(aft, text + ci);
+        struct line *line = &text.lines[cursor.row];
+        strcpy(aft, line->text + cursor.col);
         for (int i = 0; i < tab_size; i++) {
-            text[ci] = ' ';
-            ci++;
-            cursor_pos[0]++;
+            line->text[cursor.col] = ' ';
+            cursor.col++;
         }
-        strcpy(text + ci, aft);
+        strcpy(line->text + cursor.col, aft);
     } else if (key == XKB_KEY_Delete) {
-        char aft[1024];
-        strcpy(aft, text + ci + 1);
-        strcpy(text + ci, aft);
+        struct line *currline = &text.lines[cursor.row];
+        struct line *nextline = &text.lines[cursor.row + 1];
+        if (cursor.col == currline->length) {
+            if (cursor.row == text.linecount - 1) {
+                return;
+            }
+            strcpy(currline->text + currline->length, nextline->text);
+            currline->length += nextline->length;
+            for (int i = cursor.row + 1; i < text.linecount; i++) {
+                text.lines[i] = text.lines[i + 1];
+            }
+            text.linecount--;
+        } else {
+            char aft[1024];
+            struct line *line = &text.lines[cursor.row];
+            strcpy(aft, line->text + cursor.col + 1);
+            strcpy(line->text + cursor.col, aft);
+            line->length--;
+        }
+        
     } else if (key == XKB_KEY_BackSpace) {
-        if (cursor_pos[0] == 0) {
+        if (cursor.col == 0) {
             return;
         }
         char aft[1024];
-        strcpy(aft, text + ci);
-        strcpy(text + ci - 1, aft);
-        cursor_pos[0]--;
+        struct line *line = &text.lines[cursor.row];
+        strcpy(aft, line->text + cursor.col);
+        strcpy(line->text + cursor.col - 1, aft);
+        cursor.col--;
     } else {
         char aft[1024];
-        strcpy(aft, text + ci); 
-        text[ci] = key;
-        ci++;
-        cursor_pos[0]++;
-        strcpy(text + ci, aft);
+        struct line *line = &text.lines[cursor.row];
+        strcpy(aft, line->text + cursor.col); 
+        line->text[cursor.col] = key;
+        line->length++;
+        cursor.col++;
+        strcpy(line->text + cursor.col, aft);
     }
 
-    // fprintf(stderr, "text: '%s'\n", text);
     recreate_buffer_cb();
 }
 
 static void draw_cb(struct shm_buffer *buf) {
-    draw(buf, text, cursor_pos);
+    draw(buf, &text, &cursor);
 }
 
 int main() {
@@ -114,6 +137,9 @@ int main() {
     // while ((n = fread(text, sizeof(*text), sizeof(text), file)) > 0) {
     //     printf("%s\n", text);
     // }
+    // char foo[5] = {0};
+
+    initialize_text(orig_text);
 
     initialize_draw();
 

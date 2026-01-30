@@ -73,44 +73,54 @@ static void draw_ascii_text_freetype(
     FT_Face face,
     int baseline_x,
     int baseline_y,
-    const char *text,
+    struct text *text,
     uint8_t fr, uint8_t fg, uint8_t fb
 ) {
     int pen_x = baseline_x;
     int pen_y = baseline_y;
 
-    for (const unsigned char *p = (const unsigned char*)text; *p; p++) {
-        unsigned char c = *p;
+    for (int i = 0; i < text->linecount; i++) {
+        char *linetext = text->lines[i].text;
+        for (const unsigned char *p = (const unsigned char*)linetext; *p; p++) {
+            unsigned char c = *p;
 
-        if (c == '\n') {
-            pen_x = baseline_x;
-            // crude line advance: use face metrics
-            int line = (int)(face->size->metrics.height >> 6);
-            if (line <= 0) line = 16;
-            pen_y += line;
-            continue;
+            // if (c == '\n') {
+            //     pen_x = baseline_x;
+            //     // crude line advance: use face metrics
+            //     int line = (int)(face->size->metrics.height >> 6);
+            //     if (line <= 0) line = 16;
+            //     pen_y += line;
+            //     continue;
+            // }
+
+            // Render glyph bitmap
+            if (FT_Load_Char(face, c, FT_LOAD_RENDER) != 0) {
+                continue; // skip missing glyphs
+            }
+
+            FT_GlyphSlot g = face->glyph;
+
+            // Position: bitmap_left is x offset from pen,
+            // bitmap_top is y offset above baseline.
+            int x = pen_x + g->bitmap_left;
+            int y = pen_y - g->bitmap_top;
+
+            if (g->bitmap.pixel_mode == FT_PIXEL_MODE_GRAY) {
+                blit_ft_bitmap_xrgb(buf, &g->bitmap, x, y, fr, fg, fb);
+            } else {
+                // For a first pass, ignore other pixel modes.
+            }
+
+            pen_x += (int)(g->advance.x >> 6);
         }
-
-        // Render glyph bitmap
-        if (FT_Load_Char(face, c, FT_LOAD_RENDER) != 0) {
-            continue; // skip missing glyphs
-        }
-
-        FT_GlyphSlot g = face->glyph;
-
-        // Position: bitmap_left is x offset from pen,
-        // bitmap_top is y offset above baseline.
-        int x = pen_x + g->bitmap_left;
-        int y = pen_y - g->bitmap_top;
-
-        if (g->bitmap.pixel_mode == FT_PIXEL_MODE_GRAY) {
-            blit_ft_bitmap_xrgb(buf, &g->bitmap, x, y, fr, fg, fb);
-        } else {
-            // For a first pass, ignore other pixel modes.
-        }
-
-        pen_x += (int)(g->advance.x >> 6);
+        pen_x = baseline_x;
+        // crude line advance: use face metrics
+        int lineheight = (int)(face->size->metrics.height >> 6);
+        if (lineheight <= 0) lineheight = 16;
+        pen_y += lineheight;
+        continue;
     }
+
 }
 
 FT_Library ft;
@@ -152,7 +162,7 @@ void draw_rectangle(uint32_t *p, int container_width, int x, int y, int width, i
     }
 }
 
-void draw(struct shm_buffer *buf, const char *text, int *cursor_pos) {
+void draw(struct shm_buffer *buf, struct text *text, struct cursor *cursor) {
     // Background + text
     // fill_solid_xrgb(buf, pack_xrgb(0x00, 0x00, 0x00));
 
@@ -187,8 +197,8 @@ void draw(struct shm_buffer *buf, const char *text, int *cursor_pos) {
     int cursor_width = text_width;
     // int cursor_height = face->size->metrics.y_ppem;
     int cursor_height = line_height;
-    int cursor_col = cursor_pos[0];
-    int cursor_line = cursor_pos[1];
+    int cursor_col = cursor->col;
+    int cursor_line = cursor->row;
     int cursor_x = text_x + text_width * cursor_col;
     int cursor_y = (text_y + cursor_line * line_height) - cursor_height;
     // int cursor_height = 1;
