@@ -11,6 +11,13 @@ struct text text;
 
 recreate_buffer_cb_type recreate_buffer_cb;
 
+void print_ascii_code(char *str, int len) {
+    for (int i = 0; i < len; i++) {
+        fprintf(stderr, "%d,", str[i]);
+    }
+    fprintf(stderr, "\n");
+}
+
 static void initialize_text(char *o_text) {
     int startofline = 0;
     int li = 0;
@@ -28,10 +35,12 @@ static void initialize_text(char *o_text) {
     text.lines[lsi].length = li;
     text.linecount = lsi + 1;
 
-    for (int i = 0; i <= text.linecount; i++) {
-        printf("%s\n", text.lines[i].text);
-    }
+    // for (int i = 0; i <= text.linecount; i++) {
+    //     printf("%s\n", text.lines[i].text);
+    // }
 }
+
+#define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 
 static void key_cb(xkb_keysym_t key) {
     if (key == XKB_KEY_Left) {
@@ -39,9 +48,13 @@ static void key_cb(xkb_keysym_t key) {
     } else if (key == XKB_KEY_Right) {
         (cursor.col < text.lines[cursor.row].length) && cursor.col++;
     } else if (key == XKB_KEY_Up) {
-        cursor.row && cursor.row--;
+        if (cursor.row == 0) { return; }
+        cursor.row--;
+        cursor.col = MIN(cursor.col, text.lines[cursor.row].length);
     } else if (key == XKB_KEY_Down) {
-        (cursor.row < text.linecount - 1) && cursor.row++;
+        if (cursor.row == text.linecount - 1) { return; }
+        cursor.row++;
+        cursor.col = MIN(cursor.col, text.lines[cursor.row].length);
     } else if (key == XKB_KEY_Next) {
         cursor.col = text.lines[text.linecount - 1].length;
         cursor.row = text.linecount - 1;
@@ -59,7 +72,9 @@ static void key_cb(xkb_keysym_t key) {
         // Split the current line into two
         strcpy(newline.text, line->text + cursor.col);
         newline.length = line->length - cursor.col;
-        line->text[cursor.col] = '\0';
+        for (int i = cursor.col; i < line->length; i++) {
+            line->text[i] = '\0';
+        }
         line->length = cursor.col;
 
         // Push the rest of the lines forward
@@ -146,16 +161,15 @@ static void draw_cb(struct shm_buffer *buf) {
 }
 
 int main() {
+    char input_text[] = "0-2345678901234567890\n1-2345678901234567890\n2-2345678901234567890";
+    // char input_text[1024] = {0};
     // FILE *file = fopen("proto/data/exit.c","rb");
     // size_t n;
-    // while ((n = fread(text, sizeof(*text), sizeof(text), file)) > 0) {
-    //     printf("%s\n", text);
+    // while ((n = fread(input_text, sizeof(*input_text), sizeof(text), file)) > 0) {
+    //     printf("%s\n", input_text);
     // }
-    // char foo[5] = {0};
 
-    char test_text[] = "0-2345678901234567890\n1-2345678901234567890\n2-2345678901234567890";
-
-    initialize_text(test_text);
+    initialize_text(input_text);
 
     initialize_draw();
 
