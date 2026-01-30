@@ -6,7 +6,6 @@
 #include "window.h"
 #include "draw.h"
 
-char orig_text[] = "0-2345678901234567890\n1-2345678901234567890\n2-2345678901234567890";
 struct cursor cursor = {0, 0};
 struct text text;
 
@@ -76,14 +75,17 @@ static void key_cb(xkb_keysym_t key) {
         cursor.row++;
     } else if (key == XKB_KEY_Tab){
         int tab_size = 2;
-        char aft[1024];
         struct line *line = &text.lines[cursor.row];
-        strcpy(aft, line->text + cursor.col);
+        // make room for tab
+        for (int i = line->length - 1; i >= cursor.col; i--) {
+            line->text[i + tab_size] = line->text[i];
+        }
+        // fill tab
         for (int i = 0; i < tab_size; i++) {
             line->text[cursor.col] = ' ';
             cursor.col++;
         }
-        strcpy(line->text + cursor.col, aft);
+        line->length += tab_size;
     } else if (key == XKB_KEY_Delete) {
         struct line *currline = &text.lines[cursor.row];
         struct line *nextline = &text.lines[cursor.row + 1];
@@ -103,8 +105,7 @@ static void key_cb(xkb_keysym_t key) {
             strcpy(aft, line->text + cursor.col + 1);
             strcpy(line->text + cursor.col, aft);
             line->length--;
-        }
-        
+        }        
     } else if (key == XKB_KEY_BackSpace) {
         if (cursor.col == 0) {
             if (cursor.row == 0) {
@@ -152,7 +153,9 @@ int main() {
     // }
     // char foo[5] = {0};
 
-    initialize_text(orig_text);
+    char test_text[] = "0-2345678901234567890\n1-2345678901234567890\n2-2345678901234567890";
+
+    initialize_text(test_text);
 
     initialize_draw();
 
