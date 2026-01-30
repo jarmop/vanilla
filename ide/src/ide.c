@@ -107,13 +107,26 @@ static void key_cb(xkb_keysym_t key) {
         
     } else if (key == XKB_KEY_BackSpace) {
         if (cursor.col == 0) {
-            return;
+            if (cursor.row == 0) {
+                return;
+            }
+            struct line *currline = &text.lines[cursor.row];
+            struct line *previousline = &text.lines[cursor.row - 1];
+            strcpy(previousline->text + previousline->length, currline->text);
+            cursor.col = previousline->length;
+            cursor.row--;
+            previousline->length += currline->length;                
+            for (int i = cursor.row + 1; i < text.linecount; i++) {
+                text.lines[i] = text.lines[i + 1];
+            }
+            text.linecount--;
+        } else {
+            char aft[1024];
+            struct line *line = &text.lines[cursor.row];
+            strcpy(aft, line->text + cursor.col);
+            strcpy(line->text + cursor.col - 1, aft);
+            cursor.col--;
         }
-        char aft[1024];
-        struct line *line = &text.lines[cursor.row];
-        strcpy(aft, line->text + cursor.col);
-        strcpy(line->text + cursor.col - 1, aft);
-        cursor.col--;
     } else {
         char aft[1024];
         struct line *line = &text.lines[cursor.row];
