@@ -15,42 +15,50 @@ static void key_cb(xkb_keysym_t key) {
     int text_len = strlen(text);
     int cursor_col = cursor_pos[0];
     int cursor_line = cursor_pos[1];
-    int line = 0;
-    int ci = 0;
-    for (; line < cursor_line; ci++) {
-        if (text[ci] == '\n') {
-            line++;
+
+    int linecount = 0;
+    int linelengths[1024] = {0};
+    int linelength = 0;
+    for (int i = 0; i < text_len; i++) {
+        if (text[i] == '\n') {
+            linelengths[linecount] = linelength;
+            linecount++;
+            linelength = 0;
+        } else {
+            linelength++;
         }
     }
+    linelengths[linecount] = linelength;
+
+    int ci = 0;
+    for (int l = 0; l < cursor_line; l++) {
+        // +1 = add newline character
+        ci += linelengths[l] + 1;
+    }
     ci += cursor_col;
+
+    // fprintf(stderr, "linelengths: %d --> {%d, %d, %d, %d}\n", linecount, linelengths[0], linelengths[1], linelengths[2], linelengths[3]);
+    // fprintf(stderr, "cursor_col: %d\n", cursor_col);
+    // fprintf(stderr, "linelengths[cursor_line]: %d\n", linelengths[cursor_line]);
     // fprintf(stderr, "ci: %d\n", ci);
     if (key == XKB_KEY_Left) {
         cursor_pos[0] && cursor_pos[0]--;
     } else if (key == XKB_KEY_Right) {
-        text[ci] != '\n' && text[ci] != '\0' && cursor_pos[0]++;
+        (cursor_col != linelengths[cursor_line]) && cursor_pos[0]++;
     } else if (key == XKB_KEY_Up) {
         cursor_pos[1] && cursor_pos[1]--;
     } else if (key == XKB_KEY_Down) {
-        int i = ci;
-        while (text[i] != '\n' && text[i] != '\0') { i++; }
-        text[i] != '\0' && cursor_pos[1]++;
+        (cursor_line < linecount) && cursor_pos[1]++;
     } else if (key == XKB_KEY_Next) {
-        for (int i = ci; text[i] != '\0'; i++) {
-            cursor_pos[0]++;
-            if (text[i] == '\n') {
-                cursor_pos[0] = 0;
-                cursor_pos[1]++;
-            }
-        }
+        cursor_pos[0] = linelengths[linecount];
+        cursor_pos[1] = linecount;
     } else if (key == XKB_KEY_Prior) {
         cursor_pos[0] = 0;
         cursor_pos[1] = 0;
     } else if (key == XKB_KEY_Home) {
         cursor_pos[0] = 0;
     } else if (key == XKB_KEY_End) {
-        int eol = ci;
-        while (text[eol] != '\n' && text[eol] != '\0') { eol++; }
-        cursor_pos[0] = cursor_col + eol - ci;
+        cursor_pos[0] = linelengths[cursor_line];
     } else if (key == XKB_KEY_Return) {
         // backup the text after cursor
         char aft[1024];
