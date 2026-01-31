@@ -91,11 +91,12 @@ static void key_cb(xkb_keysym_t key) {
     } else if (key == XKB_KEY_Tab){
         int tab_size = 2;
         struct line *line = &text.lines[cursor.row];
-        // make room for tab
+        // move the rest of the line forward to make room for the tab
+        line->text[line->length + tab_size] = '\0';
         for (int i = line->length - 1; i >= cursor.col; i--) {
             line->text[i + tab_size] = line->text[i];
         }
-        // fill tab
+        // fill the tab with spaces
         for (int i = 0; i < tab_size; i++) {
             line->text[cursor.col] = ' ';
             cursor.col++;

@@ -8,6 +8,10 @@
 #include <sys/mman.h>
 #include <stdint.h>
 #include <errno.h>
+#include <sys/timerfd.h>
+#include <poll.h>
+#include <string.h>
+#include <time.h>
 
 #include "xdg-shell-client-protocol.h"
 
@@ -138,7 +142,7 @@ static void __seat_capabilities(
 	struct wl_seat *wl_seat,
 	uint32_t new_capabilities
 ) {
-    fprintf(stderr, "received seat capabilities: %d\n", new_capabilities);
+    // fprintf(stderr, "received seat capabilities: %d\n", new_capabilities);
     seat = wl_seat;
     capabilities = new_capabilities; 
 }
@@ -148,7 +152,7 @@ static void __seat_capabilities(
 	struct wl_seat *wl_seat,
 	const char *name
  ) {
-    fprintf(stderr, "received seat name: %s\n", name);
+    // fprintf(stderr, "received seat name: %s\n", name);
  }
 
 static const struct wl_seat_listener seat_listener = {
@@ -229,10 +233,37 @@ static const struct xdg_toplevel_listener xdg_toplevel_listener = {
 // ================================== INPUT ===================================
 
 #define xkb_keycode_offset 8
+#define ms_to_ns(ms) (ms * 1000 * 1000)
 
 struct xkb_context *key_ctx;
 struct xkb_keymap *key_keymap;
 struct xkb_state *key_state;
+
+int32_t repeat_rate = 0;
+int32_t repeat_delay = 0;
+xkb_keysym_t repeat_key = 0;
+int repeat_fd;
+
+static void set_key_repeat(uint32_t delay, uint32_t rate) {
+    struct itimerspec its;
+    memset(&its, 0, sizeof its);
+    its.it_value.tv_nsec = ms_to_ns(delay);
+    its.it_interval.tv_nsec = ms_to_ns(rate);
+    if (timerfd_settime(repeat_fd, 0, &its, NULL) < 0) {
+        printf("timerfd_settime: error\n");
+        exit(1);
+    }
+}
+
+static void start_key_repeat(xkb_keysym_t key) {
+    repeat_key = key;
+    set_key_repeat(repeat_delay, repeat_rate);
+}
+
+static void stop_key_repeat() {
+    set_key_repeat(0, 0);
+    repeat_key = 0;
+}
 
 static void __keyboard_keymap(
     void *data,
@@ -241,7 +272,7 @@ static void __keyboard_keymap(
 	int32_t fd,
 	uint32_t size
 ) {
-    fprintf(stderr, "__keyboard_keymap\n");
+    // fprintf(stderr, "__keyboard_keymap\n");
 
     char *map_shm = mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
     key_keymap = xkb_keymap_new_from_string(
@@ -259,7 +290,7 @@ static void __keyboard_enter(
 	struct wl_surface *surface,
 	struct wl_array *keys
 ) {
-    fprintf(stderr, "__keyboard_enter\n");
+    // fprintf(stderr, "__keyboard_enter\n");
 }
 
 static void __keyboard_leave(
@@ -268,7 +299,7 @@ static void __keyboard_leave(
 	uint32_t serial,
 	struct wl_surface *surface
 ) {
-    fprintf(stderr, "__keyboard_leave\n");
+    // fprintf(stderr, "__keyboard_leave\n");
 }
 
 const int isModiferKey(xkb_keysym_t sym) {
@@ -297,24 +328,24 @@ static void __keyboard_key(
 	uint32_t key,
 	uint32_t state
 ) {
-    if (state != WL_KEYBOARD_KEY_STATE_PRESSED) {
-        return;
-    }
-
-    uint32_t keycode = key + xkb_keycode_offset;
-    xkb_keysym_t sym = xkb_state_key_get_one_sym(key_state, keycode);
-
-    // char buf[128];
-    // fprintf(stderr, "%d - %d - %d", keycode, sym, XKB_KEY_Return);
-    // xkb_keysym_get_name(sym, buf, sizeof(buf));
-    // fprintf(stderr, "symbol name: %s (%d)\n", buf, sym);
-    // fprintf(stderr, "%d - %d", keycode, XKB_KEY_Left);
-
-    // fprintf(stderr, " - %d\n", sym);
-
-    if (!isModiferKey(sym)) {
-        key_cb(sym);
-    }
+    if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+        uint32_t keycode = key + xkb_keycode_offset;    
+        xkb_keysym_t sym = xkb_state_key_get_one_sym(key_state, keycode);
+        // char buf[128];
+        // xkb_keysym_get_name(sym, buf, sizeof(buf));
+        // fprintf(stderr, " - %d\n", sym);
+        if (!isModiferKey(sym)) {
+            key_cb(sym);
+            if (xkb_keymap_key_repeats(key_keymap, keycode)) {
+                // fprintf(stderr, "repeat key: %c\n", sym);
+                start_key_repeat(sym);
+            }
+        }        
+    } else if (state == WL_KEYBOARD_KEY_STATE_RELEASED) {
+        if (repeat_key) {
+            stop_key_repeat();
+        }
+    }    
 }
 
 static void __keyboard_modifiers(
@@ -338,7 +369,9 @@ static void __keyboard_repeat_info(
     int32_t rate,
     int32_t delay
 ) {
-    fprintf(stderr, "__keyboard_repeat_info\n");
+    // fprintf(stderr, "__keyboard_repeat_info - rate: %d, delay: %d\n", rate, delay);
+    repeat_rate = rate;
+    repeat_delay = delay;
 }
 
 static const struct wl_keyboard_listener keyboard_listener = {
@@ -412,7 +445,68 @@ recreate_buffer_cb_type initialize_window(
 
 
 int run_window() {
-    while (wl_display_dispatch(display)) {
+    repeat_fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
+    if (repeat_fd < 0) {
+        fprintf(stderr, "timerfd_create\n");
+        exit(1);
+    }
+    
+    int wl_fd = wl_display_get_fd(display);
+    if (wl_fd < 0) {
+        fprintf(stderr, "wl_display_get_fd\n");
+        exit(1);
+    }
+
+    for (;;) {
+        // 1) Dispatch anything already queued in libwayland
+        wl_display_dispatch_pending(display);
+
+        // 2) Send outgoing requests
+        if (wl_display_flush(display) < 0) {
+            // EPIPE means compositor disconnected
+            fprintf(stderr, "wl_display_flush\n");
+            exit(1);            
+        }
+
+        // 3) Prepare to read (required for correct poll integration)
+        while (wl_display_prepare_read(display) != 0) {
+            // If it fails, there were pending events; dispatch them and try again
+            wl_display_dispatch_pending(display);
+        }
+
+        struct pollfd fds[2];
+        fds[0].fd = wl_fd;
+        fds[0].events = POLLIN;
+        fds[1].fd = repeat_fd;
+        fds[1].events = POLLIN;
+
+        int ret = poll(fds, 2, -1);
+
+        if (ret < 0) {
+            wl_display_cancel_read(display);
+            fprintf(stderr, "poll\n");
+            exit(1);
+        }
+
+        // 4) If Wayland fd is readable, read events; otherwise cancel the read
+        if (fds[0].revents & POLLIN) {
+            if (wl_display_read_events(display) < 0) {
+                fprintf(stderr, "wl_display_read_events\n");
+                break;
+            }
+            // Now dispatch the newly read events (callbacks fire here)
+            wl_display_dispatch_pending(display);
+        } else {
+            wl_display_cancel_read(display);
+        }
+
+        // 5) Handle repeat event
+        if (fds[1].revents & POLLIN) {
+            uint64_t expirations = 0;
+            if (read(repeat_fd, &expirations, sizeof expirations) == sizeof expirations) {
+                key_cb(repeat_key);
+            }
+        }
     }
 
     __buffer_destroy(&buf);
