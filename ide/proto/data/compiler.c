@@ -58,6 +58,13 @@ int main(void) {
     // msg: db "Hello, World!\n"
     //
     // Encoding (position-independent using RIP-relative LEA):
+
+    /**
+     * B8 is the base op code for move instructions that move an immediate value to a register
+     * Apparently the register type is determined by an "offset" that is added to the opcode
+     * B8 + 0 = *AX
+     * B8 + 7 = BF = *DI
+     */
     static const uint8_t code[] = {
         // mov eax,1  –  Put the linux syscall id for "write" (1) into the eax register
         0xB8,0x01,0x00,0x00,0x00,
@@ -65,11 +72,14 @@ int main(void) {
         0xBF,0x01,0x00,0x00,0x00,
         // lea rsi,[rip+0x10]  –  Put the address of the string into the rsi register
         // (distance from the current instruction to the string is 16 bytes)
+        // 0x8D is the op code for lea. 0x48 is a prefix telling that the operands are 64 bits.
+        // 0x35 is the ModR/M byte for *SI destination register and 32-bit displacement 
+        // (Table 2-2 in chapter 2.1.3 of the x86 instruction reference manual)
         0x48,0x8D,0x35,0x10,0x00,0x00,0x00,   
         // mov edx,15  –  Put the size of the string into the edx register
         // "Hello, World!\n" is 15 bytes, "\n" is translated by linux into  
         // two separate characters: line feed, and carriage return
-        0xBA,0x0E,0x00,0x00,0x00,
+        0xBA,0x0F,0x00,0x00,0x00,
         0x0F,0x05,                            // syscall
         0xB8,0x3C,0x00,0x00,0x00,             // mov eax,60
         0x31,0xFF,                            // xor edi,edi

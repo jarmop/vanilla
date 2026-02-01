@@ -7,13 +7,13 @@ function formatBytes(bytes: number[]) {
 export function ElfReader() {
     return (
         <div>
+            <h1>ElfReader</h1>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
                 <KeyInformation />
                 <ElfHeader />
             </div>
             <ProgramHeaders />
             <SectionHeaders />
-            <hr />
         </div>
     );
 }

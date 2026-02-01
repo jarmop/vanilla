@@ -10,5 +10,6 @@
     "rust-analyzer.inlayHints.closingBraceHints.enable": false,
     "rust-analyzer.inlayHints.expressionAdjustmentHints.disableReborrows": false,
     "rust-analyzer.inlayHints.parameterHints.enable": false,
-    "javascript.autoClosingTags": false
+    "javascript.autoClosingTags": false,
+    "deno.enable": true
 }

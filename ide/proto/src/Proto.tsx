@@ -25,6 +25,7 @@ for (let i = 0; i < bytes.length; i += rowLength) {
 export function Proto() {
     return (
         <>
+            <h1>The original proto</h1>
             <div style={{ display: "flex", flexDirection: "row" }}>
                 <AddrCol byteRows={byteRows} />
                 {/* <DecCol /> */}

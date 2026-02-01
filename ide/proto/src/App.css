@@ -58,3 +58,22 @@
         border-width: 0 0 1px 0;
     }
 }
+
+.AssemblerTable {
+    border-collapse: collapse;
+    border: 2px solid black;
+    color: #222;
+    td, th {
+        border: 1px  solid #ccc;
+        border-bottom-color: #777;
+        border-bottom-width: 2px;
+        padding: 0px 2px;
+    }
+    th {
+        /* border-color: #ccc #000; */
+        border-color: #777;
+        /* border-right-color: #777; */
+        /* border-right-width: 2px; */
+        border-width: 2px;
+    }
+}

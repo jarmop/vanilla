@@ -78,16 +78,19 @@ export function BytesViewTable() {
     ];
 
     return (
-        <table className="BytesViewTable">
-            {byteBlocks.map((bb, i) => (
-                <Fragment key={i}>
-                    {i > 0 && <ByteBlockDivider />}
-                    <ByteBlock
-                        byteBlock={bb}
-                    />
-                </Fragment>
-            ))}
-        </table>
+        <>
+            <h1>BytesViewTable</h1>
+            <table className="BytesViewTable">
+                {byteBlocks.map((bb, i) => (
+                    <Fragment key={i}>
+                        {i > 0 && <ByteBlockDivider />}
+                        <ByteBlock
+                            byteBlock={bb}
+                        />
+                    </Fragment>
+                ))}
+            </table>
+        </>
     );
 }
 
