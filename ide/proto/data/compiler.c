@@ -1,5 +1,4 @@
 // emit_elf.c: hard-coded "compiler" that outputs an ELF64 x86-64 executable.
-// The generated program does: write(1, "X", 1); exit(0);
 
 #include <stdint.h>
 #include <stdio.h>
@@ -56,19 +55,27 @@ int main(void) {
     //   xor edi, edi        ; status=0
     //   syscall
     //
-    // msg: db 'X'
+    // msg: db "Hello, World!\n"
     //
     // Encoding (position-independent using RIP-relative LEA):
     static const uint8_t code[] = {
-        0xB8,0x01,0x00,0x00,0x00,             // mov eax,1
-        0xBF,0x01,0x00,0x00,0x00,             // mov edi,1
-        0x48,0x8D,0x35,0x10,0x00,0x00,0x00,   // lea rsi,[rip+0x10]  (to msg)
-        0xBA,0x01,0x00,0x00,0x00,             // mov edx,1
-        0x0F,0x05,                             // syscall
+        // mov eax,1  –  Put the linux syscall id for "write" (1) into the eax register
+        0xB8,0x01,0x00,0x00,0x00,
+        // mov edi,1  –  Put the file id into the edi register (1 = stdout)
+        0xBF,0x01,0x00,0x00,0x00,
+        // lea rsi,[rip+0x10]  –  Put the address of the string into the rsi register
+        // (distance from the current instruction to the string is 16 bytes)
+        0x48,0x8D,0x35,0x10,0x00,0x00,0x00,   
+        // mov edx,15  –  Put the size of the string into the edx register
+        // "Hello, World!\n" is 15 bytes, "\n" is translated by linux into  
+        // two separate characters: line feed, and carriage return
+        0xBA,0x0E,0x00,0x00,0x00,
+        0x0F,0x05,                            // syscall
         0xB8,0x3C,0x00,0x00,0x00,             // mov eax,60
-        0x31,0xFF,                             // xor edi,edi
-        0x0F,0x05,                             // syscall
-        0x58                                   // 'X'
+        0x31,0xFF,                            // xor edi,edi
+        0x0F,0x05,                            // syscall
+        // "Hello, world!\n"
+        0x48,0x65,0x6C,0x6C,0x6F,0x2C,0x20,0x57,0x6F,0x72,0x6C,0x64,0x21,0x0A,0x0D
     };
     const uint64_t file_size = code_off + (uint64_t)sizeof(code);
 

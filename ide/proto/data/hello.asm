@@ -53,14 +53,15 @@ phdr:
 
 phdrsize equ $ - phdr
 
-_start:    
+_start:
     ; write(1, msg, 1)
     mov eax, 1            ;5 --> 13 sys_write
     mov edi, 1            ;5 --> 18 --> 2 fd = stdout
     
     ; row 9, previous instruction overflows to the first 2 bytes
-    lea rsi, [rel msg]    ;7 --> 9 buf = &msg (NASM computes RIP-rel disp correctly)
-    mov edx, 1            ;5 --> 14 count = 1
+    lea rsi, [rel msg]    ;7 --> 9 [rel, msg] => NASM computes the distance from the current
+                          ; instruction's address to the address of the 'X' (16 bytes)
+    mov edx, 15           ;5 --> 14 ("Hello, World!\n" is 15 bytes)
     syscall               ;2 --> 16
 
     ; row 10
@@ -70,6 +71,6 @@ _start:
     syscall               ;2 --> 9
 
 msg:
-    db 'X'                ;1 --> 10 the single character
+    db 'Hello, world!', 13, 10  ;15 --> 24
 
 filesize equ $ - $$
