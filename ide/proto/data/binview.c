@@ -12,10 +12,9 @@ int main(int argc, char *argv[]) {
     size_t n;
     unsigned char buffer[16];
     while ((n = fread(buffer, sizeof(*buffer), sizeof(buffer), file)) > 0) {
-        for(size_t i=0; i<n; i+=2) {
-            printf("%02x%02x", buffer[i], buffer[i+1]);
+        for(size_t i=0; i<n; i++) {
+            printf("%02x", buffer[i]);
         }
-        // printf("\n");
     }
     
     return 0;
