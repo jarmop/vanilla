@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include "draw.h"
@@ -73,14 +74,15 @@ static void draw_ascii_text_freetype(
     FT_Face face,
     int baseline_x,
     int baseline_y,
-    struct text *text,
+    struct line *lines,
+    int linecount,
     uint8_t fr, uint8_t fg, uint8_t fb
 ) {
     int pen_x = baseline_x;
     int pen_y = baseline_y;
 
-    for (int i = 0; i < text->linecount; i++) {
-        char *linetext = text->lines[i].text;
+    for (int i = 0; i < linecount; i++) {
+        char *linetext = lines[i].text;
         for (const unsigned char *p = (const unsigned char*)linetext; *p; p++) {
             unsigned char c = *p;
 
@@ -142,7 +144,7 @@ int initialize_draw() {
     }
 
     // Set pixel size (height in px). Width 0 = auto from height.
-    if (FT_Set_Pixel_Sizes(face, 0, 16) != 0) {
+    if (FT_Set_Pixel_Sizes(face, 0, 14) != 0) {
         fprintf(stderr, "FT_Set_Pixel_Sizes failed\n");
     }
 
@@ -162,66 +164,49 @@ void draw_rectangle(uint32_t *p, int container_width, int x, int y, int width, i
     }
 }
 
-void draw(struct shm_buffer *buf, struct text *text, struct cursor *cursor) {
-    // Background + text
-    // fill_solid_xrgb(buf, pack_xrgb(0x00, 0x00, 0x00));
+void draw_cursor(struct shm_buffer *buf, struct cursor *cursor, int text_x, int text_y, int lines_offset) {
+    int text_width = (int)(face->glyph->advance.x >> 6);
+    int line_height = (int)(face->size->metrics.height >> 6);
+    int cursor_width = text_width;
+    int cursor_height = line_height;
+    int cursor_col = cursor->col;
+    int cursor_line = cursor->row - lines_offset;
+    int cursor_x = text_x + text_width * cursor_col;
+    int cursor_y = (text_y + (cursor_line + 1) * line_height) - cursor_height;
 
-    // fprintf(stderr, "draw: %s\n", text);
+    draw_rectangle(buf->data, buf->width, cursor_x, cursor_y + cursor_height, cursor_width, 1);
+       draw_rectangle(buf->data, buf->width, cursor_x, cursor_y, 1, cursor_height);
+
+}
+
+void draw(struct shm_buffer *buf, struct text *text, struct cursor *cursor) {
     int text_x = 20;
     int text_y = 50;
+
+    // Draw textbox
+    draw_rectangle(buf->data, buf->width, text_x-10, text_y-10, 10, 10);
+
+    int line_height = (int)(face->size->metrics.height >> 6);
+    int lines_in_view = (buf->height - text_y) / line_height;
+    int lines_offset = (cursor->row < lines_in_view ? 0 : cursor->row - lines_in_view + 1);
+    struct line *visible_lines = text->lines + lines_offset;
+
+    // fprintf(stderr, "lines_offset: %d\n", lines_offset);
+
+    int pen_x = text_x;
+    int pen_y = text_y + line_height;
 
     draw_ascii_text_freetype(
         buf, 
         face, 
-        text_x, 
-        text_y,  
-        // "ABCDEFGHIJKLMNOPQRSUVWXYZ\nabcdefghijklmnopqrstuvwxyz",
-        text,
+        pen_x, 
+        pen_y,
+        visible_lines,
+        lines_in_view,
         0xBB, 
         0xBB, 
         0xBB
     );
 
-    // ((uint32_t) buf->data) = 5;
-    // int *prkl = buf->data;
-    // for (int i = 1000; i < 10000; i++) {
-    //     *(prkl + i) = 0xffffffff;
-
-    // }
-
-    // int text_width = face->size->metrics.x_ppem;
-    // int text_width = 10;
-    int text_width = (int)(face->glyph->advance.x >> 6);
-    // int text_height = 16;
-    int line_height = (int)(face->size->metrics.height >> 6);
-    int cursor_width = text_width;
-    // int cursor_height = face->size->metrics.y_ppem;
-    int cursor_height = line_height;
-    int cursor_col = cursor->col;
-    int cursor_line = cursor->row;
-    int cursor_x = text_x + text_width * cursor_col;
-    int cursor_y = (text_y + cursor_line * line_height) - cursor_height;
-    // int cursor_height = 1;
-
-    draw_rectangle(buf->data, buf->width, cursor_x, cursor_y + cursor_height, cursor_width, 1);
-    draw_rectangle(buf->data, buf->width, cursor_x, cursor_y, 1, cursor_height);
-
-    // fprintf(stderr, "bitmap_left: %d\n", face->glyph->bitmap_left);
-    // fprintf(stderr, "bitmap_top: %d\n", face->glyph->bitmap_top);
-
-    // fprintf(stderr, "pen_x: %ld\n", face->glyph->advance.x);
-    // fprintf(stderr, "line: %ld\n", face->size->metrics.height);
-
-    // // fprintf(stderr, "pen_x2: %d\n", (int)(face->glyph->advance.x >> 6));
-    // fprintf(stderr, "pen_x2: %ld\n", (face->glyph->advance.x >> 6));
-    // // fprintf(stderr, "line2: %d\n", (int)(face->size->metrics.height >> 6));
-    // fprintf(stderr, "line2: %ld\n", (face->size->metrics.height >> 6));
-
-
-    /**
-            pen_x += (int)(g->advance.x >> 6);
-     * int line = (int)(face->size->metrics.height >> 6);
-
-     */
-
+    draw_cursor(buf, cursor, text_x, text_y, lines_offset);
 }
