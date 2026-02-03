@@ -1,13 +1,17 @@
 #include <stdio.h>
-#include <stdlib.h> 
+#include <stdlib.h>
 #include <string.h>
+#include <linux/input-event-codes.h>
+#include <time.h>
+#include <sys/time.h>
 
 #include "types.h"
 #include "window.h"
 #include "draw.h"
 
+int font_size = 14;
 struct cursor cursor = {0, 0};
-struct text text;
+struct text text = {0};
 
 recreate_buffer_cb_type recreate_buffer_cb;
 
@@ -34,6 +38,7 @@ static void initialize_text(char *o_text) {
     }
     text.lines[lsi].length = li;
     text.linecount = lsi + 1;
+    // text.lineheight = 14;
 
     // for (int i = 0; i <= text.linecount; i++) {
     //     printf("%s\n", text.lines[i].text);
@@ -157,24 +162,86 @@ static void key_cb(xkb_keysym_t key) {
     recreate_buffer_cb();
 }
 
+struct timespec t1;
+struct timespec t2;
+uint32_t tms1 = 0;
+int rendered_offset_y = 0;
+// struct shm_buffer fake_buffer;
+
+static void mouse_cb(uint32_t mouse_event, uint32_t x, uint32_t y, const struct scroll *scroll) {
+    int changed = 0;
+    int mplier = 5;
+
+    switch (mouse_event) {
+    case BTN_LEFT:
+        fprintf(stderr, "BTN_LEFT\n");
+        break;
+    case BTN_RIGHT:
+        fprintf(stderr, "BTN_RIGHT\n");
+        break;
+    case REL_WHEEL:
+        int min_y = (1 - text.linecount) * text.lineheight;
+        int max_y = 0;
+        text.offset_x -= x * mplier;
+        text.offset_y -= y * mplier;
+
+
+        if (text.offset_y < min_y) {
+            text.offset_y = min_y;
+        }
+        if (text.offset_y > max_y) {
+            text.offset_y = max_y;
+        }
+
+        if (text.offset_y != rendered_offset_y) {
+            changed = 1;
+        }
+
+        break;
+    default:
+        fprintf(stderr, "unrecognized mouse event: %d\n", mouse_event);
+        break;
+    }
+
+    if (changed) {
+        // Throttled drawing. Recreate buffer only if over 30 ms has passed since the last time. 
+        int mindiff = 30;
+        clock_gettime(CLOCK_MONOTONIC, &t2);
+        uint32_t tms2 = t2.tv_sec * 1000 + t2.tv_nsec / 1000000;
+        // fprintf(stderr, "timestamp: %u\n", tms2 - tms1);
+        if (tms2 - tms1 > mindiff) {
+            // fprintf(stderr, "recreate_buffer_cb\n");
+            recreate_buffer_cb();
+            // draw(&fake_buffer, &text, &cursor);
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            tms1 = t1.tv_sec * 1000 + t1.tv_nsec / 1000000;
+            rendered_offset_y = text.offset_y;
+        }
+    }
+}
+
 static void draw_cb(struct shm_buffer *buf) {
     draw(buf, &text, &cursor);
+    // draw(&fake_buffer, &text, &cursor);
 }
 
 int main() {
-    char input_text[] = "0-2345678901234567890\n1-2345678901234567890\n2-2345678901234567890";
-    // char input_text[1024] = {0};
-    // FILE *file = fopen("proto/data/exit.c","rb");
-    // size_t n;
-    // while ((n = fread(input_text, sizeof(*input_text), sizeof(text), file)) > 0) {
-    //     printf("%s\n", input_text);
-    // }
+    // memset(&fake_buffer, 0, sizeof(fake_buffer));
+
+    // char input_text[] = "0-2345678901234567890\n1-2345678901234567890\n2-2345678901234567890";
+    char input_text[64 * 1024] = {0};
+    // FILE *file = fopen("proto/data/exit.c","r");
+    FILE *file = fopen("src/ide.c","r");
+    size_t n;
+    while ((n = fread(input_text, sizeof(*input_text), sizeof(text), file)) > 0) {
+        // printf("%s\n", input_text);
+    }
 
     initialize_text(input_text);
 
-    initialize_draw();
+    text.lineheight = initialize_draw(font_size);
 
-    recreate_buffer_cb = initialize_window(&draw_cb, &key_cb);
+    recreate_buffer_cb = initialize_window(&draw_cb, &key_cb, &mouse_cb);
 
     run_window();
 

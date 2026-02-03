@@ -16,7 +16,11 @@
 
 typedef void (*recreate_buffer_cb_type)(void);
 
-recreate_buffer_cb_type initialize_window();
+recreate_buffer_cb_type initialize_window(
+    void (*draw_cb_arg)(struct shm_buffer *buf),
+    void (*key_cb_arg)(xkb_keysym_t key),
+    void (*mouse_cb_arg)(uint32_t mouse_event, uint32_t x, uint32_t y, const struct scroll *scroll)
+);
 int run_window();
 
 #endif

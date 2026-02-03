@@ -128,33 +128,34 @@ static void draw_ascii_text_freetype(
 FT_Library ft;
 FT_Face face;
 
-int initialize_draw() {
+int initialize_draw(int font_size) {
     // Font path: pass as argv[1], otherwise use a common default on many Linux distros.
     const char *font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf";
     
     if (FT_Init_FreeType(&ft) != 0) {
         fprintf(stderr, "FT_Init_FreeType failed\n");
-        return 1;
+        exit(1);
     }
 
     if (FT_New_Face(ft, font_path, 0, &face) != 0) {
         fprintf(stderr, "FT_New_Face failed (font path: %s)\n", font_path);
         FT_Done_FreeType(ft);
-        return 1;
+        exit(1);
     }
 
     // Set pixel size (height in px). Width 0 = auto from height.
-    if (FT_Set_Pixel_Sizes(face, 0, 14) != 0) {
+    if (FT_Set_Pixel_Sizes(face, 0, font_size) != 0) {
         fprintf(stderr, "FT_Set_Pixel_Sizes failed\n");
     }
 
-    return 0;
+    int line_height = (int)(face->size->metrics.height >> 6);
+
+    return line_height;
 }
 
 void draw_rectangle(uint32_t *p, int container_width, int x, int y, int width, int height) {
     int row_start = y * container_width;
     int row_end = row_start + container_width * height;
-    // printf("rows: %d - %d\n", row_start, row_end);
     for (int row=row_start; row<row_end; row+=container_width) {
         int i_start = row + x;
         int i_end = i_start + width;
@@ -164,35 +165,12 @@ void draw_rectangle(uint32_t *p, int container_width, int x, int y, int width, i
     }
 }
 
-void draw_cursor(struct shm_buffer *buf, struct cursor *cursor, int text_x, int text_y, int lines_offset) {
-    int text_width = (int)(face->glyph->advance.x >> 6);
-    int line_height = (int)(face->size->metrics.height >> 6);
-    int cursor_width = text_width;
-    int cursor_height = line_height;
-    int cursor_col = cursor->col;
-    int cursor_line = cursor->row - lines_offset;
-    int cursor_x = text_x + text_width * cursor_col;
-    int cursor_y = (text_y + (cursor_line + 1) * line_height) - cursor_height;
-
-    draw_rectangle(buf->data, buf->width, cursor_x, cursor_y + cursor_height, cursor_width, 1);
-       draw_rectangle(buf->data, buf->width, cursor_x, cursor_y, 1, cursor_height);
-
-}
-
 void draw(struct shm_buffer *buf, struct text *text, struct cursor *cursor) {
-    int text_x = 20;
-    int text_y = 50;
-
-    // Draw textbox
-    draw_rectangle(buf->data, buf->width, text_x-10, text_y-10, 10, 10);
-
+    int text_width = (int)(face->size->metrics.max_advance >> 6);
     int line_height = (int)(face->size->metrics.height >> 6);
-    int lines_in_view = (buf->height - text_y) / line_height;
-    int lines_offset = (cursor->row < lines_in_view ? 0 : cursor->row - lines_in_view + 1);
-    struct line *visible_lines = text->lines + lines_offset;
 
-    // fprintf(stderr, "lines_offset: %d\n", lines_offset);
-
+    int text_x = text->offset_x;
+    int text_y = text->offset_y;
     int pen_x = text_x;
     int pen_y = text_y + line_height;
 
@@ -201,12 +179,25 @@ void draw(struct shm_buffer *buf, struct text *text, struct cursor *cursor) {
         face, 
         pen_x, 
         pen_y,
-        visible_lines,
-        lines_in_view,
+        text->lines,
+        text->linecount,
         0xBB, 
         0xBB, 
         0xBB
     );
 
-    draw_cursor(buf, cursor, text_x, text_y, lines_offset);
+    int cursor_width = text_width;
+    int cursor_height = line_height;
+    int cursor_x = text_x + cursor->col * text_width;
+    int cursor_y = text_y + cursor->row * line_height;
+    if (
+        cursor_x >= 0 
+        && cursor_x + cursor_width <= buf->width 
+        && cursor_y >= 0 
+        && cursor_y + cursor_height <= buf->height 
+    ) {
+        draw_rectangle(buf->data, buf->width,  cursor_x, cursor_y + cursor_height, cursor_width, 1);
+        draw_rectangle(buf->data, buf->width, cursor_x, cursor_y, 1, cursor_height);
+    }
+
 }

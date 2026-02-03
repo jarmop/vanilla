@@ -3,7 +3,7 @@
 
 #include "types.h"
 
-int initialize_draw();
+int initialize_draw(int lineheight);
 void draw(struct shm_buffer *buf, struct text *text, struct cursor *cursor);
 
 #endif
