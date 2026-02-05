@@ -28,7 +28,7 @@ static struct wl_seat *seat;
 // Buffer is apparently communicated between server and client via wl_buffer
 // but the actual buffer data is inside our custom shm_buffer struct
 static struct wl_buffer *wlbuffer;
-struct shm_buffer buf;
+struct bitmap bm;
 
 // Configuration state
 static int configured = 0;
@@ -42,26 +42,24 @@ static int height = initial_height;
 static int new_width = initial_width;
 static int new_height = initial_height;
 
-static void (*draw_cb)(struct shm_buffer *buf);
+static void (*draw_cb)(struct bitmap *buf);
 static void (*key_cb)(xkb_keysym_t key);
 static void (*mouse_cb)(uint32_t mouse_event, uint32_t x, uint32_t y, const struct scroll *scroll);
 
 // ============================= BUFFER HANDLING ==============================
 
-static void __buffer_destroy(struct shm_buffer *buf) {
-    if (!buf) return;
+static void __buffer_destroy() {
     if (wlbuffer) wl_buffer_destroy(wlbuffer);
-    if (buf->data && buf->size > 0) munmap(buf->data, (size_t)buf->size);
-    memset(buf, 0, sizeof(*buf));
+    if (bm.buffer && bm.size > 0) munmap(bm.buffer, (size_t)bm.size);
 }
 
-static int __buffer_create(struct shm_buffer *buf, int width, int height) {
+static int __buffer_create() {
     // Initialize the buffer with zeros
-    memset(buf, 0, sizeof(*buf));
-    buf->width = width; // in pixels
-    buf->height = height; // in pixels
-    buf->stride = width * 4; // Width in bytes (XRGB = 4 bytes)
-    buf->size = buf->stride * height; // Total size in bytes
+    memset(&bm, 0, sizeof(bm));
+    bm.width = width; // in pixels
+    bm.height = height; // in pixels
+    bm.stride = width * 4; // Width in bytes (XRGB = 4 bytes)
+    bm.size = bm.stride * height; // Total size in bytes
 
     // Create a file (descriptor) to map the buffer to
     int fd = memfd_create("shm-buffer", 0);
@@ -69,47 +67,46 @@ static int __buffer_create(struct shm_buffer *buf, int width, int height) {
         perror("memfd_create");
         return -1;
     }
-    if (ftruncate(fd, buf->size) < 0) {
+    if (ftruncate(fd, bm.size) < 0) {
         perror("ftruncate");
         close(fd);
         return -1;
     }
 
-    buf->data = mmap(NULL, (size_t)buf->size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (buf->data == MAP_FAILED) {
+    bm.buffer = mmap(NULL, (size_t)bm.size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (bm.buffer == MAP_FAILED) {
         perror("mmap");
         close(fd);
-        buf->data = NULL;
+        bm.buffer = NULL;
         return -1;
     }
 
-    struct wl_shm_pool *pool = wl_shm_create_pool(shm, fd, buf->size);
+    struct wl_shm_pool *pool = wl_shm_create_pool(shm, fd, bm.size);
     // Wayland has what it needs from fd via the pool; safe to close now.
     close(fd);
 
     wlbuffer = wl_shm_pool_create_buffer(
-        pool, 0, width, height, buf->stride, WL_SHM_FORMAT_XRGB8888
+        pool, 0, width, height, bm.stride, WL_SHM_FORMAT_XRGB8888
     );
     wl_shm_pool_destroy(pool);
 
     if (!wlbuffer) {
         fprintf(stderr, "wl_shm_pool_create_buffer failed\n");
-        munmap(buf->data, (size_t)buf->size);
-        buf->data = NULL;
+        __buffer_destroy();
         return -1;
     }
 
     return 0;
 }
 
-static void recreate_buffer(int width, int height) {
-    __buffer_destroy(&buf);
-    if (__buffer_create(&buf, width, height) != 0) {
+static void recreate_buffer() {
+    __buffer_destroy();
+    if (__buffer_create() != 0) {
         fprintf(stderr, "Failed to create buffer\n");
         exit(1);
     }
 
-    draw_cb(&buf);
+    draw_cb(&bm);
 
     wl_surface_attach(surface, wlbuffer, 0, 0);
     wl_surface_damage_buffer(surface, 0, 0, width, height);
@@ -117,7 +114,7 @@ static void recreate_buffer(int width, int height) {
 }
 
 static void recreate_buffer_cb() {
-    recreate_buffer(width, height);
+    recreate_buffer();
 }
 
 // ============================ REGISTRY LISTENER ============================
@@ -203,8 +200,9 @@ static void __xdg_surface_configure(
         && new_height > 0
         && (new_width != width || new_height != height)
     ) {
-        recreate_buffer(new_width, new_height);
-        width = new_width; height = new_height;
+        width = new_width; 
+        height = new_height;
+        recreate_buffer();
     }
 }
 
@@ -525,7 +523,7 @@ static const struct wl_pointer_listener pointer_listener = {
 struct wl_display *display;
 
 recreate_buffer_cb_type initialize_window(
-    void (*draw_cb_arg)(struct shm_buffer *buf),
+    void (*draw_cb_arg)(struct bitmap *buf),
     void (*key_cb_arg)(xkb_keysym_t key),
     void (*mouse_cb_arg)(uint32_t mouse_event, uint32_t x, uint32_t y, const struct scroll *scroll)
 ) {
@@ -580,7 +578,7 @@ recreate_buffer_cb_type initialize_window(
         wl_display_dispatch(display);
     }
 
-    recreate_buffer(width, height);
+    recreate_buffer();
 
     return &recreate_buffer_cb;
 }
@@ -651,7 +649,7 @@ int run_window() {
         }
     }
 
-    __buffer_destroy(&buf);
+    __buffer_destroy();
 
     return 0;
 }

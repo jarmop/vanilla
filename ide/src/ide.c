@@ -15,13 +15,6 @@ struct text text = {0};
 
 recreate_buffer_cb_type recreate_buffer_cb;
 
-void print_ascii_code(char *str, int len) {
-    for (int i = 0; i < len; i++) {
-        fprintf(stderr, "%d,", str[i]);
-    }
-    fprintf(stderr, "\n");
-}
-
 static void initialize_text(char *o_text) {
     int startofline = 0;
     int li = 0;
@@ -38,11 +31,6 @@ static void initialize_text(char *o_text) {
     }
     text.lines[lsi].length = li;
     text.linecount = lsi + 1;
-    // text.lineheight = 14;
-
-    // for (int i = 0; i <= text.linecount; i++) {
-    //     printf("%s\n", text.lines[i].text);
-    // }
 }
 
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
@@ -166,7 +154,6 @@ struct timespec t1;
 struct timespec t2;
 uint32_t tms1 = 0;
 int rendered_offset_y = 0;
-// struct shm_buffer fake_buffer;
 
 static void mouse_cb(uint32_t mouse_event, uint32_t x, uint32_t y, const struct scroll *scroll) {
     int changed = 0;
@@ -220,14 +207,11 @@ static void mouse_cb(uint32_t mouse_event, uint32_t x, uint32_t y, const struct 
     }
 }
 
-static void draw_cb(struct shm_buffer *buf) {
-    draw(buf, &text, &cursor);
-    // draw(&fake_buffer, &text, &cursor);
+static void draw_cb(struct bitmap *bm) {
+    draw(bm, &text, &cursor);
 }
 
 int main() {
-    // memset(&fake_buffer, 0, sizeof(fake_buffer));
-
     // char input_text[1024] = {0};
     // for (int i = 0; i < 8; i+=2) {
     //     input_text[i] = 'O';

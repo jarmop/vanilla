@@ -12,8 +12,8 @@
 // }
 
 // create the 32-bit XRGB8888 representation of the pixel
-static inline uint32_t pack_xrgb(uint8_t r, uint8_t g, uint8_t b) {
-    return 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+static inline uint32_t xrgb(uint8_t r, uint8_t g, uint8_t b) {
+    return 0xFF000000u | (r << 16) | (g << 8) | b;
 }
 
 // Alpha-blend a grayscale coverage value (0..255) as “source alpha”
@@ -22,20 +22,16 @@ static inline uint32_t blend_coverage_over_xrgb(
     uint32_t dst, uint8_t cov, uint8_t fr, uint8_t fg, uint8_t fb
 ) {
     if (cov == 0) return dst;
-    if (cov == 255) return pack_xrgb(fr, fg, fb);
+    if (cov == 255) return xrgb(fr, fg, fb);
+
+    // A performant C implementation of: out = b + (f - b) * a
+    #define blend(b, f, a) (b + (int)((((int)f - (int)b) * (int)a + 127) / 255))
 
     uint8_t dr = dst >> 16;
     uint8_t dg = dst >> 8;
     uint8_t db = dst;
 
-    // A performant C implementation of:  out = b + (f - b) * a
-    #define blend(b, f, a) (uint8_t)(b + (int)((((int)f - (int)b) * (int)a + 127) / 255))
-
-    uint8_t or = blend(dr, fr, cov);
-    uint8_t og = blend(dg, fg, cov);
-    uint8_t ob = blend(db, fb, cov);
-
-    return pack_xrgb(or, og, ob);
+    return xrgb(blend(dr, fr, cov), blend(dg, fg, cov), blend(db, fb, cov)); 
 }
 
 /**
@@ -43,7 +39,7 @@ static inline uint32_t blend_coverage_over_xrgb(
  * (BLock Image Transfer) 
  */
 static void draw_glyph(
-    struct shm_buffer *container,
+    struct bitmap *container,
     const FT_Bitmap *glyph,
     int dst_x,
     int dst_y,
@@ -54,7 +50,7 @@ static void draw_glyph(
      * in the container (dst).
      */
     uint8_t *src = glyph->buffer;
-    uint32_t *dst = (uint32_t *)container->data + dst_y * container->width + dst_x;
+    uint32_t *dst = (uint32_t *)container->buffer + dst_y * container->width + dst_x;
 
     for (
         int row = 0;
@@ -83,7 +79,7 @@ static void draw_glyph(
 }
 
 static void draw_text(
-    struct shm_buffer *buf,
+    struct bitmap *buf,
     FT_Face face,
     int baseline_x,
     int baseline_y,
@@ -169,7 +165,7 @@ void draw_rectangle(uint32_t *p, int container_width, int x, int y, int width, i
     }
 }
 
-void draw(struct shm_buffer *buf, struct text *text, struct cursor *cursor) {
+void draw(struct bitmap *bm, struct text *text, struct cursor *cursor) {
     int text_width = (int)(face->size->metrics.max_advance >> 6);
     int line_height = (int)(face->size->metrics.height >> 6);
 
@@ -179,7 +175,7 @@ void draw(struct shm_buffer *buf, struct text *text, struct cursor *cursor) {
     int pen_y = text_y + line_height;
 
     draw_text(
-        buf,
+        bm,
         face,
         pen_x, 
         pen_y,
@@ -196,12 +192,12 @@ void draw(struct shm_buffer *buf, struct text *text, struct cursor *cursor) {
     int cursor_y = text_y + cursor->row * line_height;
     if (
         cursor_x >= 0 
-        && cursor_x + cursor_width <= buf->width 
+        && cursor_x + cursor_width <= bm->width 
         && cursor_y >= 0 
-        && cursor_y + cursor_height <= buf->height 
+        && cursor_y + cursor_height <= bm->height 
     ) {
-        draw_rectangle(buf->data, buf->width,  cursor_x, cursor_y + cursor_height, cursor_width, 1);
-        draw_rectangle(buf->data, buf->width, cursor_x, cursor_y, 1, cursor_height);
+        draw_rectangle(bm->buffer, bm->width,  cursor_x, cursor_y + cursor_height, cursor_width, 1);
+        draw_rectangle(bm->buffer, bm->width, cursor_x, cursor_y, 1, cursor_height);
     }
 
 }

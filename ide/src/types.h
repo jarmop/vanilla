@@ -3,8 +3,8 @@
 
 #include <stdint.h> 
 
-struct shm_buffer {
-    void *data;
+struct bitmap {
+    void *buffer;
     int width;
     int height;
     int stride;
