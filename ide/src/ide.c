@@ -8,59 +8,75 @@
 #include "types.h"
 #include "window.h"
 #include "draw.h"
+#include "helpers.h"
 
 int font_size = 14;
 struct cursor cursor = {0, 0};
-struct text text = {0};
+struct textbox textboxes[2] = {0};
+int tblen = 0;
 
 recreate_buffer_cb_type recreate_buffer_cb;
 
-static void initialize_text(char *o_text) {
+static void *new_textbox(int x, int y, int width, int height, char *o_text) {
     int startofline = 0;
     int li = 0;
     int lsi = 0;
+    struct textbox textbox = {0};
+    textbox.x = x;
+    textbox.y = y;
+    textbox.width = width;
+    textbox.height = height;
+    textbox.padding = 10;
+    struct text *text = &textbox.text;
+    text->width = 0;
     for (int i = 0; o_text[i] != '\0'; i++) {
         if (o_text[i] == '\n' ) {
-            text.lines[lsi].length = li;
+            text->lines[lsi].length = li;
+            if (li > text->width) {
+                text->width = li;
+            }
             lsi++;
             li = 0;
             continue;
         } 
-        text.lines[lsi].text[li] = o_text[i];
+        text->lines[lsi].text[li] = o_text[i];
         li++;
     }
-    text.lines[lsi].length = li;
-    text.linecount = lsi + 1;
+    text->lines[lsi].length = li;
+    text->linecount = lsi + 1;
+
+    textboxes[tblen] = textbox;
+    tblen++;
 }
 
-#define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
-
 static void key_cb(xkb_keysym_t key) {
+    struct text *text = &textboxes[0].text;
+
     if (key == XKB_KEY_Left) {
         cursor.col && cursor.col--;
     } else if (key == XKB_KEY_Right) {
-        (cursor.col < text.lines[cursor.row].length) && cursor.col++;
+        (cursor.col < text->lines[cursor.row].length) && cursor.col++;
     } else if (key == XKB_KEY_Up) {
         if (cursor.row == 0) { return; }
         cursor.row--;
-        cursor.col = MIN(cursor.col, text.lines[cursor.row].length);
+        cursor.col = min(cursor.col, text->lines[cursor.row].length);
     } else if (key == XKB_KEY_Down) {
-        if (cursor.row == text.linecount - 1) { return; }
+        if (cursor.row == text->linecount - 1) { return; }
         cursor.row++;
-        cursor.col = MIN(cursor.col, text.lines[cursor.row].length);
+        cursor.col = min(cursor.col, text->lines[cursor.row].length);
     } else if (key == XKB_KEY_Next) {
-        cursor.col = text.lines[text.linecount - 1].length;
-        cursor.row = text.linecount - 1;
+        cursor.col = text->lines[text->linecount - 1].length;
+        cursor.row = text->linecount - 1;
     } else if (key == XKB_KEY_Prior) {
         cursor.col = 0;
         cursor.row = 0;
     } else if (key == XKB_KEY_Home) {
         cursor.col = 0;
     } else if (key == XKB_KEY_End) {
-        cursor.col = text.lines[cursor.row].length;
+        cursor.col = text->lines[cursor.row].length;
     } else if (key == XKB_KEY_Return) {
         struct line newline;
-        struct line *line = &text.lines[cursor.row];
+        struct line *line = &text->lines[cursor.row];
 
         // Split the current line into two
         strcpy(newline.text, line->text + cursor.col);
@@ -71,19 +87,19 @@ static void key_cb(xkb_keysym_t key) {
         line->length = cursor.col;
 
         // Push the rest of the lines forward
-        for (int i = text.linecount; i > cursor.row; i--) {
-            text.lines[i + 1] = text.lines[i];
+        for (int i = text->linecount; i > cursor.row; i--) {
+            text->lines[i + 1] = text->lines[i];
         }
 
         // Point the next line to the new line
-        text.lines[cursor.row + 1] = newline;
-        text.linecount++;
+        text->lines[cursor.row + 1] = newline;
+        text->linecount++;
         
         cursor.col = 0;
         cursor.row++;
     } else if (key == XKB_KEY_Tab){
         int tab_size = 2;
-        struct line *line = &text.lines[cursor.row];
+        struct line *line = &text->lines[cursor.row];
         // move the rest of the line forward to make room for the tab
         line->text[line->length + tab_size] = '\0';
         for (int i = line->length - 1; i >= cursor.col; i--) {
@@ -96,21 +112,21 @@ static void key_cb(xkb_keysym_t key) {
         }
         line->length += tab_size;
     } else if (key == XKB_KEY_Delete) {
-        struct line *currline = &text.lines[cursor.row];
-        struct line *nextline = &text.lines[cursor.row + 1];
+        struct line *currline = &text->lines[cursor.row];
+        struct line *nextline = &text->lines[cursor.row + 1];
         if (cursor.col == currline->length) {
-            if (cursor.row == text.linecount - 1) {
+            if (cursor.row == text->linecount - 1) {
                 return;
             }
             strcpy(currline->text + currline->length, nextline->text);
             currline->length += nextline->length;
-            for (int i = cursor.row + 1; i < text.linecount; i++) {
-                text.lines[i] = text.lines[i + 1];
+            for (int i = cursor.row + 1; i < text->linecount; i++) {
+                text->lines[i] = text->lines[i + 1];
             }
-            text.linecount--;
+            text->linecount--;
         } else {
             char aft[1024];
-            struct line *line = &text.lines[cursor.row];
+            struct line *line = &text->lines[cursor.row];
             strcpy(aft, line->text + cursor.col + 1);
             strcpy(line->text + cursor.col, aft);
             line->length--;
@@ -120,26 +136,26 @@ static void key_cb(xkb_keysym_t key) {
             if (cursor.row == 0) {
                 return;
             }
-            struct line *currline = &text.lines[cursor.row];
-            struct line *previousline = &text.lines[cursor.row - 1];
+            struct line *currline = &text->lines[cursor.row];
+            struct line *previousline = &text->lines[cursor.row - 1];
             strcpy(previousline->text + previousline->length, currline->text);
             cursor.col = previousline->length;
             cursor.row--;
             previousline->length += currline->length;                
-            for (int i = cursor.row + 1; i < text.linecount; i++) {
-                text.lines[i] = text.lines[i + 1];
+            for (int i = cursor.row + 1; i < text->linecount; i++) {
+                text->lines[i] = text->lines[i + 1];
             }
-            text.linecount--;
+            text->linecount--;
         } else {
             char aft[1024];
-            struct line *line = &text.lines[cursor.row];
+            struct line *line = &text->lines[cursor.row];
             strcpy(aft, line->text + cursor.col);
             strcpy(line->text + cursor.col - 1, aft);
             cursor.col--;
         }
     } else {
         char aft[1024];
-        struct line *line = &text.lines[cursor.row];
+        struct line *line = &text->lines[cursor.row];
         strcpy(aft, line->text + cursor.col); 
         line->text[cursor.col] = key;
         line->length++;
@@ -154,10 +170,13 @@ struct timespec t1;
 struct timespec t2;
 uint32_t tms1 = 0;
 int rendered_offset_y = 0;
+int rendered_offset_x = 0;
 
 static void mouse_cb(uint32_t mouse_event, uint32_t x, uint32_t y, const struct scroll *scroll) {
     int changed = 0;
-    int mplier = 5;
+    int xstride = 5;
+    int ystride = 5;
+    struct text *text = &textboxes[0].text;
 
     switch (mouse_event) {
     case BTN_LEFT:
@@ -167,20 +186,17 @@ static void mouse_cb(uint32_t mouse_event, uint32_t x, uint32_t y, const struct 
         // fprintf(stderr, "BTN_RIGHT\n");
         break;
     case REL_WHEEL:
-        int min_y = (1 - text.linecount) * text.lineheight;
+        int min_x = min(0, textboxes[0].width - text->width * 8 - 30);
+        int max_x = 0;
+        int min_y = (1 - text->linecount) * text->lineheight;
         int max_y = 0;
-        text.offset_x -= x * mplier;
-        text.offset_y -= y * mplier;
+        text->offset_x -= x * xstride;
+        text->offset_y -= y * ystride;
 
+        text->offset_x = min(max(text->offset_x, min_x), max_x);
+        text->offset_y = min(max(text->offset_y, min_y), max_y);
 
-        if (text.offset_y < min_y) {
-            text.offset_y = min_y;
-        }
-        if (text.offset_y > max_y) {
-            text.offset_y = max_y;
-        }
-
-        if (text.offset_y != rendered_offset_y) {
+        if ((text->offset_y != rendered_offset_y) || (text->offset_x != rendered_offset_x)) {
             changed = 1;
         }
 
@@ -202,13 +218,14 @@ static void mouse_cb(uint32_t mouse_event, uint32_t x, uint32_t y, const struct 
             // draw(&fake_buffer, &text, &cursor);
             clock_gettime(CLOCK_MONOTONIC, &t1);
             tms1 = t1.tv_sec * 1000 + t1.tv_nsec / 1000000;
-            rendered_offset_y = text.offset_y;
+            rendered_offset_y = text->offset_y;
+            rendered_offset_x = text->offset_x;
         }
     }
 }
 
 static void draw_cb(struct bitmap *bm) {
-    draw(bm, &text, &cursor);
+    draw(bm, textboxes, tblen, &cursor);
 }
 
 int main() {
@@ -220,17 +237,22 @@ int main() {
     // char input_text[] = "0-2345678901234567890\n1-2345678901234567890\n2-2345678901234567890";
     // char input_text[] = "-";
 
-    char input_text[64 * 1024] = {0};
-    // FILE *file = fopen("proto/data/exit.c","r");
-    FILE *file = fopen("src/ide.c","r");
-    size_t n;
-    while ((n = fread(input_text, sizeof(*input_text), sizeof(text), file)) > 0) {
-        // printf("%s\n", input_text);
-    }
+    // char input_text1[64*1024] = {0};
+    // // FILE *file = fopen("proto/data/exit.c","r");
+    // FILE *file = fopen("src/ide.c","r");
+    // size_t n;
+    // while ((n = fread(input_text1, sizeof(*input_text1), sizeof(input_text1), file)) > 0) {
+    //     // printf("%s\n", input_text);
+    // }
 
-    initialize_text(input_text);
 
-    text.lineheight = initialize_draw(font_size);
+    char input_text1[] = "Print";
+    new_textbox(10, 10, 100, 50, input_text1);
+
+    char input_text2[] = "Hello, World!";
+    new_textbox(400, 500, 300, 50, input_text2);
+
+    textboxes[0].text.lineheight = initialize_draw(font_size);
 
     recreate_buffer_cb = initialize_window(&draw_cb, &key_cb, &mouse_cb);
 

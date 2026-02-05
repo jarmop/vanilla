@@ -4,6 +4,6 @@
 #include "types.h"
 
 int initialize_draw(int lineheight);
-void draw(struct bitmap *buf, struct text *text, struct cursor *cursor);
+void draw(struct bitmap *bm, struct textbox *textboxes, int tblen, struct cursor *cursor);
 
 #endif

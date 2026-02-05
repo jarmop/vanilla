@@ -1,15 +1,14 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include "draw.h"
+#include "helpers.h"
 
-// static void fill_solid_xrgb(struct shm_buffer *buf, uint32_t xrgb) {
-//     uint32_t *p = (uint32_t*)buf->data;
-//     int n = buf->width * buf->height;
-//     for (int i = 0; i < n; i++) p[i] = xrgb;
-// }
+FT_Library ft;
+FT_Face face;
 
 // create the 32-bit XRGB8888 representation of the pixel
 static inline uint32_t xrgb(uint8_t r, uint8_t g, uint8_t b) {
@@ -79,8 +78,7 @@ static void draw_glyph(
 }
 
 static void draw_text(
-    struct bitmap *buf,
-    FT_Face face,
+    struct bitmap *container,
     int baseline_x,
     int baseline_y,
     struct line *lines,
@@ -89,8 +87,11 @@ static void draw_text(
 ) {
     int pen_x = baseline_x;
     int pen_y = baseline_y;
+    int lineheight = (int)(face->size->metrics.height >> 6);
 
-    for (int i = 0; i < linecount; i++) {
+    int line_limit = min(linecount, (container->height - baseline_y / lineheight) + 1);
+
+    for (int i = 0; i < line_limit; i++) {
         char *linetext = lines[i].text;
         for (const unsigned char *p = (const unsigned char*)linetext; *p; p++) {
             unsigned char c = *p;
@@ -108,25 +109,21 @@ static void draw_text(
             int y = pen_y - g->bitmap_top;
 
             if (g->bitmap.pixel_mode == FT_PIXEL_MODE_GRAY) {
-                draw_glyph(buf, &g->bitmap, x, y, fr, fg, fb);
+                draw_glyph(container, &g->bitmap, x, y, fr, fg, fb);
             } else {
                 // For a first pass, ignore other pixel modes.
             }
 
             pen_x += (int)(g->advance.x >> 6);
         }
+
         pen_x = baseline_x;
         // crude line advance: use face metrics
-        int lineheight = (int)(face->size->metrics.height >> 6);
         if (lineheight <= 0) lineheight = 16;
         pen_y += lineheight;
-        continue;
     }
 
 }
-
-FT_Library ft;
-FT_Face face;
 
 int initialize_draw(int font_size) {
     // Font path: pass as argv[1], otherwise use a common default on many Linux distros.
@@ -153,7 +150,14 @@ int initialize_draw(int font_size) {
     return line_height;
 }
 
-void draw_rectangle(uint32_t *p, int container_width, int x, int y, int width, int height) {
+
+static void fill_solid_xrgb(struct bitmap *bm, uint32_t xrgb) {
+    uint32_t *p = (uint32_t*)bm->buffer;
+    int n = bm->width * bm->height;
+    for (int i = 0; i < n; i++) p[i] = xrgb;
+}
+
+static void draw_rectangle(uint32_t *p, int container_width, int x, int y, int width, int height) {
     int row_start = y * container_width;
     int row_end = row_start + container_width * height;
     for (int row=row_start; row<row_end; row+=container_width) {
@@ -165,39 +169,75 @@ void draw_rectangle(uint32_t *p, int container_width, int x, int y, int width, i
     }
 }
 
-void draw(struct bitmap *bm, struct text *text, struct cursor *cursor) {
+static void draw_textbox(struct bitmap *bm, struct textbox *textbox, struct cursor *cursor) {
+    struct text* text = &textbox->text;
     int text_width = (int)(face->size->metrics.max_advance >> 6);
     int line_height = (int)(face->size->metrics.height >> 6);
 
-    int text_x = text->offset_x;
-    int text_y = text->offset_y;
+    int text_x = text->offset_x + textbox->padding;
+    int text_y = text->offset_y + textbox->padding;
     int pen_x = text_x;
     int pen_y = text_y + line_height;
 
+    struct bitmap textbox_bm;
+    textbox_bm.width = textbox->width;
+    textbox_bm.height = textbox->height;
+    textbox_bm.stride = textbox_bm.width * 4;
+    textbox_bm.size = textbox_bm.stride * textbox_bm.height;
+    textbox_bm.buffer = malloc(textbox_bm.size);
+
+    // fill_solid_xrgb(&textbox_bm, 0x222222);
+    // fill_solid_xrgb(&textbox_bm, 0xFFFFFF);
+    fill_solid_xrgb(&textbox_bm, 0xDDDDDD);
+    // fill_solid_xrgb(&textbox_bm, 0xCCCCCC);
+    // fill_solid_xrgb(&textbox_bm, 0xBBBBBB);
+
     draw_text(
-        bm,
-        face,
-        pen_x, 
+        &textbox_bm,
+        pen_x,
         pen_y,
         text->lines,
         text->linecount,
-        0xBB, 
-        0xBB, 
-        0xBB
-    );
+        0x22,
+        0x22,
+        0x22
+        // 0xBB,
+        // 0xBB,
+        // 0xBB
+    );    
 
-    int cursor_width = text_width;
-    int cursor_height = line_height;
-    int cursor_x = text_x + cursor->col * text_width;
-    int cursor_y = text_y + cursor->row * line_height;
-    if (
-        cursor_x >= 0 
-        && cursor_x + cursor_width <= bm->width 
-        && cursor_y >= 0 
-        && cursor_y + cursor_height <= bm->height 
-    ) {
-        draw_rectangle(bm->buffer, bm->width,  cursor_x, cursor_y + cursor_height, cursor_width, 1);
-        draw_rectangle(bm->buffer, bm->width, cursor_x, cursor_y, 1, cursor_height);
+    // int cursor_width = text_width;
+    // int cursor_height = line_height;
+    // int cursor_x = text_x + cursor->col * text_width;
+    // int cursor_y = text_y + cursor->row * line_height;
+    // if (
+    //     cursor_x >= 0 
+    //     && cursor_x + cursor_width <= textbox_bm.width 
+    //     && cursor_y >= 0 
+    //     && cursor_y + cursor_height <= textbox_bm.height 
+    // ) {
+    //     draw_rectangle(textbox_bm.buffer, textbox_bm.width,  cursor_x, cursor_y + cursor_height, cursor_width, 1);
+    //     draw_rectangle(textbox_bm.buffer, textbox_bm.width, cursor_x, cursor_y, 1, cursor_height);
+    // }
+
+    // Copy textbox buffer on the container buffer
+    uint32_t *bp = bm->buffer + textbox->x + textbox->y * bm->width;
+    uint32_t *tp = textbox_bm.buffer;
+    for (int i = 0; i < textbox_bm.height; i++) {
+        
+        for (int j = 0; j < textbox_bm.width; j++) {
+            bp[j] = tp[j];
+        }
+
+        bp += bm->width;
+        tp += textbox_bm.width;
     }
 
+    free(textbox_bm.buffer);
+}
+
+void draw(struct bitmap *bm, struct textbox *textboxes, int tblen, struct cursor *cursor) {
+    for (int i = 0; i < tblen; i++) {
+        draw_textbox(bm, textboxes + i, cursor);
+    }
 }
