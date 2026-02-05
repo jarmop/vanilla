@@ -24,44 +24,57 @@ static inline uint32_t blend_coverage_over_xrgb(
     if (cov == 0) return dst;
     if (cov == 255) return pack_xrgb(fr, fg, fb);
 
-    uint8_t dr = (dst >> 16) & 0xFF;
-    uint8_t dg = (dst >> 8)  & 0xFF;
-    uint8_t db = (dst)       & 0xFF;
+    uint8_t dr = dst >> 16;
+    uint8_t dg = dst >> 8;
+    uint8_t db = dst;
 
-    // out = dst + (fg - dst) * a
-    // use integer math with rounding
-    uint32_t a = cov;
+    // A performant C implementation of:  out = b + (f - b) * a
+    #define blend(b, f, a) (uint8_t)(b + (int)((((int)f - (int)b) * (int)a + 127) / 255))
 
-    uint8_t or_ = (uint8_t)(dr + (int)((((int)fr - (int)dr) * (int)a + 127) / 255));
-    uint8_t og_ = (uint8_t)(dg + (int)((((int)fg - (int)dg) * (int)a + 127) / 255));
-    uint8_t ob_ = (uint8_t)(db + (int)((((int)fb - (int)db) * (int)a + 127) / 255));
+    uint8_t or = blend(dr, fr, cov);
+    uint8_t og = blend(dg, fg, cov);
+    uint8_t ob = blend(db, fb, cov);
 
-    return pack_xrgb(or_, og_, ob_);
+    return pack_xrgb(or, og, ob);
 }
 
 /**
  * Copy bitmaps from one memory location to another using the BLIT method 
  * (BLock Image Transfer) 
  */
-static void blit_ft_bitmap_xrgb(
-    struct shm_buffer *buf,
-    const FT_Bitmap *bm,
+static void draw_glyph(
+    struct shm_buffer *container,
+    const FT_Bitmap *glyph,
     int dst_x,
     int dst_y,
     uint8_t fr, uint8_t fg, uint8_t fb
 ) {
-    // We assume bm->pixel_mode == FT_PIXEL_MODE_GRAY and bm->num_grays == 256
-    for (int row = 0; row < (int)bm->rows; row++) {
-        int y = dst_y + row;
-        if (y < 0 || y >= buf->height) continue;
+    /**
+     * Temporary pointers for the glyph buffer (src) and the destination area 
+     * in the container (dst).
+     */
+    uint8_t *src = glyph->buffer;
+    uint32_t *dst = (uint32_t *)container->data + dst_y * container->width + dst_x;
 
-        const uint8_t *src = bm->buffer + row * bm->pitch;
-        uint32_t *dst = (uint32_t*)((uint8_t*)buf->data + y * buf->stride) + dst_x;
+    for (
+        int row = 0;
+        row < glyph->rows;
+        row++,
+        src += glyph->width,
+        dst += container->width
+    ) {
+        int buf_y = dst_y + row;
+        // Prevent overflowing buffer vertically
+        if (buf_y < 0 || buf_y >= container->height) {
+            continue;
+        }
 
-        for (int col = 0; col < (int)bm->width; col++) {
-            int x = dst_x + col;
-            if (x < 0 || x >= buf->width) continue;
-
+        for (int col = 0; col < glyph->width; col++) {
+            int bm_x = dst_x + col;
+            // Prevent overflowing buffer horizontally
+            if (bm_x < 0 || bm_x >= container->width) {
+                continue;
+            };
             uint8_t cov = src[col];
             uint32_t old = dst[col];
             dst[col] = blend_coverage_over_xrgb(old, cov, fr, fg, fb);
@@ -69,7 +82,7 @@ static void blit_ft_bitmap_xrgb(
     }
 }
 
-static void draw_ascii_text_freetype(
+static void draw_text(
     struct shm_buffer *buf,
     FT_Face face,
     int baseline_x,
@@ -86,15 +99,6 @@ static void draw_ascii_text_freetype(
         for (const unsigned char *p = (const unsigned char*)linetext; *p; p++) {
             unsigned char c = *p;
 
-            // if (c == '\n') {
-            //     pen_x = baseline_x;
-            //     // crude line advance: use face metrics
-            //     int line = (int)(face->size->metrics.height >> 6);
-            //     if (line <= 0) line = 16;
-            //     pen_y += line;
-            //     continue;
-            // }
-
             // Render glyph bitmap
             if (FT_Load_Char(face, c, FT_LOAD_RENDER) != 0) {
                 continue; // skip missing glyphs
@@ -108,7 +112,7 @@ static void draw_ascii_text_freetype(
             int y = pen_y - g->bitmap_top;
 
             if (g->bitmap.pixel_mode == FT_PIXEL_MODE_GRAY) {
-                blit_ft_bitmap_xrgb(buf, &g->bitmap, x, y, fr, fg, fb);
+                draw_glyph(buf, &g->bitmap, x, y, fr, fg, fb);
             } else {
                 // For a first pass, ignore other pixel modes.
             }
@@ -174,9 +178,9 @@ void draw(struct shm_buffer *buf, struct text *text, struct cursor *cursor) {
     int pen_x = text_x;
     int pen_y = text_y + line_height;
 
-    draw_ascii_text_freetype(
-        buf, 
-        face, 
+    draw_text(
+        buf,
+        face,
         pen_x, 
         pen_y,
         text->lines,

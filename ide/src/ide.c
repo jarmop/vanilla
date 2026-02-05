@@ -174,10 +174,10 @@ static void mouse_cb(uint32_t mouse_event, uint32_t x, uint32_t y, const struct 
 
     switch (mouse_event) {
     case BTN_LEFT:
-        fprintf(stderr, "BTN_LEFT\n");
+        // fprintf(stderr, "BTN_LEFT\n");
         break;
     case BTN_RIGHT:
-        fprintf(stderr, "BTN_RIGHT\n");
+        // fprintf(stderr, "BTN_RIGHT\n");
         break;
     case REL_WHEEL:
         int min_y = (1 - text.linecount) * text.lineheight;
@@ -228,7 +228,14 @@ static void draw_cb(struct shm_buffer *buf) {
 int main() {
     // memset(&fake_buffer, 0, sizeof(fake_buffer));
 
+    // char input_text[1024] = {0};
+    // for (int i = 0; i < 8; i+=2) {
+    //     input_text[i] = 'O';
+    //     input_text[i+1] = '\n';
+    // }
     // char input_text[] = "0-2345678901234567890\n1-2345678901234567890\n2-2345678901234567890";
+    // char input_text[] = "-";
+
     char input_text[64 * 1024] = {0};
     // FILE *file = fopen("proto/data/exit.c","r");
     FILE *file = fopen("src/ide.c","r");

@@ -397,7 +397,7 @@ static void __pointer_enter(
     wl_fixed_t surface_x, 
     wl_fixed_t surface_y
 ) {       
-    fprintf(stderr, "__pointer_enter: %d, %d\n", px(surface_x), px(surface_y));
+    // fprintf(stderr, "__pointer_enter: %d, %d\n", px(surface_x), px(surface_y));
 }
 
 static void __pointer_leave(
@@ -406,7 +406,7 @@ static void __pointer_leave(
 	uint32_t serial,
 	struct wl_surface *surface
 ) {       
-    fprintf(stderr, "__pointer_leave\n");
+    // fprintf(stderr, "__pointer_leave\n");
 }
 
 static void __pointer_motion(
