@@ -9,6 +9,7 @@
 #include "window.h"
 #include "draw.h"
 #include "helpers.h"
+#include "compiler.h"
 
 int font_size = 14;
 struct cursor cursor = {0, 0};
@@ -17,7 +18,7 @@ int tblen = 0;
 
 recreate_buffer_cb_type recreate_buffer_cb;
 
-static void *new_textbox(int x, int y, int width, int height, char *o_text) {
+static void new_textbox(int x, int y, int width, int height, char *o_text) {
     int startofline = 0;
     int li = 0;
     int lsi = 0;
@@ -26,7 +27,7 @@ static void *new_textbox(int x, int y, int width, int height, char *o_text) {
     textbox.y = y;
     textbox.width = width;
     textbox.height = height;
-    textbox.padding = 10;
+    textbox.padding = 4;
     struct text *text = &textbox.text;
     text->width = 0;
     for (int i = 0; o_text[i] != '\0'; i++) {
@@ -50,6 +51,9 @@ static void *new_textbox(int x, int y, int width, int height, char *o_text) {
 }
 
 static void key_cb(xkb_keysym_t key) {
+    if (!textboxes[0].has_focus) {
+        return;
+    }
     struct text *text = &textboxes[0].text;
 
     if (key == XKB_KEY_Left) {
@@ -176,11 +180,12 @@ static void mouse_cb(uint32_t mouse_event, uint32_t x, uint32_t y, const struct 
     int changed = 0;
     int xstride = 5;
     int ystride = 5;
-    struct text *text = &textboxes[0].text;
+    struct text *text = &textboxes[1].text;
 
     switch (mouse_event) {
     case BTN_LEFT:
         // fprintf(stderr, "BTN_LEFT\n");
+        compile(text->lines[0].text);
         break;
     case BTN_RIGHT:
         // fprintf(stderr, "BTN_RIGHT\n");
@@ -245,12 +250,11 @@ int main() {
     //     // printf("%s\n", input_text);
     // }
 
-
     char input_text1[] = "Print";
-    new_textbox(10, 10, 100, 50, input_text1);
+    new_textbox(10, 10, 50, 32, input_text1);
 
     char input_text2[] = "Hello, World!";
-    new_textbox(400, 500, 300, 50, input_text2);
+    new_textbox(62, 10, 150, 32, input_text2);
 
     textboxes[0].text.lineheight = initialize_draw(font_size);
 

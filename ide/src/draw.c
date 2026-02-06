@@ -186,9 +186,9 @@ static void draw_textbox(struct bitmap *bm, struct textbox *textbox, struct curs
     textbox_bm.size = textbox_bm.stride * textbox_bm.height;
     textbox_bm.buffer = malloc(textbox_bm.size);
 
-    // fill_solid_xrgb(&textbox_bm, 0x222222);
+    fill_solid_xrgb(&textbox_bm, 0x222222);
     // fill_solid_xrgb(&textbox_bm, 0xFFFFFF);
-    fill_solid_xrgb(&textbox_bm, 0xDDDDDD);
+    // fill_solid_xrgb(&textbox_bm, 0xDDDDDD);
     // fill_solid_xrgb(&textbox_bm, 0xCCCCCC);
     // fill_solid_xrgb(&textbox_bm, 0xBBBBBB);
 
@@ -198,37 +198,37 @@ static void draw_textbox(struct bitmap *bm, struct textbox *textbox, struct curs
         pen_y,
         text->lines,
         text->linecount,
-        0x22,
-        0x22,
-        0x22
-        // 0xBB,
-        // 0xBB,
-        // 0xBB
+        // 0x22,
+        // 0x22,
+        // 0x22
+        0xBB,
+        0xBB,
+        0xBB
     );    
 
-    // int cursor_width = text_width;
-    // int cursor_height = line_height;
-    // int cursor_x = text_x + cursor->col * text_width;
-    // int cursor_y = text_y + cursor->row * line_height;
-    // if (
-    //     cursor_x >= 0 
-    //     && cursor_x + cursor_width <= textbox_bm.width 
-    //     && cursor_y >= 0 
-    //     && cursor_y + cursor_height <= textbox_bm.height 
-    // ) {
-    //     draw_rectangle(textbox_bm.buffer, textbox_bm.width,  cursor_x, cursor_y + cursor_height, cursor_width, 1);
-    //     draw_rectangle(textbox_bm.buffer, textbox_bm.width, cursor_x, cursor_y, 1, cursor_height);
-    // }
+    if (textbox->has_focus) {
+        int cursor_width = text_width;
+        int cursor_height = line_height;
+        int cursor_x = text_x + cursor->col * text_width;
+        int cursor_y = text_y + cursor->row * line_height;
+        if (
+            cursor_x >= 0 
+            && cursor_x + cursor_width <= textbox_bm.width 
+            && cursor_y >= 0 
+            && cursor_y + cursor_height <= textbox_bm.height 
+        ) {
+            draw_rectangle(textbox_bm.buffer, textbox_bm.width,  cursor_x, cursor_y + cursor_height, cursor_width, 1);
+            draw_rectangle(textbox_bm.buffer, textbox_bm.width, cursor_x, cursor_y, 1, cursor_height);
+        }
+    }
 
     // Copy textbox buffer on the container buffer
     uint32_t *bp = bm->buffer + textbox->x + textbox->y * bm->width;
     uint32_t *tp = textbox_bm.buffer;
     for (int i = 0; i < textbox_bm.height; i++) {
-        
         for (int j = 0; j < textbox_bm.width; j++) {
             bp[j] = tp[j];
         }
-
         bp += bm->width;
         tp += textbox_bm.width;
     }
@@ -237,7 +237,43 @@ static void draw_textbox(struct bitmap *bm, struct textbox *textbox, struct curs
 }
 
 void draw(struct bitmap *bm, struct textbox *textboxes, int tblen, struct cursor *cursor) {
+    u32 border_color = 0x222222;
+    // u32 border_color = 0x777777;
+    // u32 border_color = 0xCCCCCC;
+    // u32 border_color = 0;
+    // u32 bg_color = 0x777777;
+    // u32 bg_color = 0x999999;
+    u32 bg_color = 0xBBBBBB;
+    // u32 bg_color = 0x222222;
+    // u32 bg_color = 0;
+
+    fill_solid_xrgb(bm, border_color);
+
+    int border_width = 2;
+    struct bitmap cbm;
+    // cbm.width = bm->width - 2 * border_width;
+    cbm.width = 250;
+    // cbm.height = bm->height - 2 * border_width;
+    cbm.height = 100;
+    cbm.stride = cbm.width * 4;
+    cbm.size = cbm.stride * cbm.height;
+    cbm.buffer = malloc(cbm.size);
+
+    fill_solid_xrgb(&cbm, bg_color);
+
+    uint32_t *bp = bm->buffer + border_width + border_width * bm->width;
+    uint32_t *cp = cbm.buffer;
+    for (int i = 0; i < cbm.height; i++) {
+        for (int j = 0; j < cbm.width; j++) {
+            bp[j] = cp[j];
+        }
+        bp += bm->width;
+        cp += cbm.width;
+    }
+
     for (int i = 0; i < tblen; i++) {
         draw_textbox(bm, textboxes + i, cursor);
     }
+
+    free(cbm.buffer);
 }
