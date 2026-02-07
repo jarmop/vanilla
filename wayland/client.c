@@ -8,12 +8,25 @@
 #include <string.h>
 #include <errno.h>
 
-struct wl_header {
+/**
+ * __attribute__((__packed__)) tells gcc to place the struct members in a way that minimizes 
+ * the memory usage. In other words, align the members based on the smallest member, 2 bytes 
+ * in this case.
+ */
+struct __attribute__((__packed__)) wl_header {
     uint32_t object_id;
     uint16_t opcode;
     uint16_t size;
-} __attribute__((packed));
+};
 
+/**
+ * Round up value in fours (1 --> 4, 6 --> 8, 4 --> 4, etc.)
+ * Adding 3u pushes the lowest two bits forward by two bits. Bitwise AND and NOT with 3u turns 
+ * the lowest two bits to zero. These two together effectively round up a value by four.
+ * u = 32-bit unsigned integer
+ * ~ = bitwise NOT
+ * 3u = 00000000 00000000 00000000 00000011
+ */ 
 static size_t align4(size_t n) { return (n + 3u) & ~3u; }
 
 static int connect_wayland_socket(void) {
@@ -41,7 +54,7 @@ static int connect_wayland_socket(void) {
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path));
 
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("connect");
