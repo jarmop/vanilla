@@ -2,19 +2,22 @@ import { Assembler } from "./Assembler";
 import { BytesView } from "./BytesView";
 import { BytesViewTable } from "./BytesViewTable";
 import { ElfReader } from "./ElfReader";
+import { ProgramEditor } from "./ProgramEditor.tsx";
 import { Proto } from "./Proto";
 
 export function App() {
     return (
         <>
-            <Assembler />
-            <hr />
-            <BytesViewTable />
-            <hr />
+            <ProgramEditor />
+            {/* <hr /> */}
+            {/* <Assembler /> */}
+            {/* <hr /> */}
+            {/* <BytesViewTable /> */}
+            {/* <hr /> */}
             {/* <BytesView /> */}
-            <ElfReader />
-            <hr />
-            <Proto />
+            {/* <ElfReader /> */}
+            {/* <hr /> */}
+            {/* <Proto /> */}
         </>
     );
 }
