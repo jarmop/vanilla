@@ -9,10 +9,10 @@ export function App() {
     return (
         <>
             <ProgramEditor />
-            {/* <hr /> */}
-            {/* <Assembler /> */}
-            {/* <hr /> */}
-            {/* <BytesViewTable /> */}
+            <hr />
+            <Assembler />
+            <hr />
+            <BytesViewTable />
             {/* <hr /> */}
             {/* <BytesView /> */}
             {/* <ElfReader /> */}
