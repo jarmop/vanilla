@@ -2,7 +2,7 @@ import { Assembler } from "./Assembler";
 import { BytesView } from "./BytesView";
 import { BytesViewTable } from "./BytesViewTable";
 import { ElfReader } from "./ElfReader";
-import { ProgramEditor } from "./ProgramEditor.tsx";
+import { ProgramEditor } from "./ProgramEditor/ProgramEditor.tsx";
 import { Proto } from "./Proto";
 
 export function App() {
