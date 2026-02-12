@@ -8,14 +8,14 @@ import { Proto } from "./Proto";
 export function App() {
     return (
         <>
-            <ProgramEditor />
+            {/* <ProgramEditor /> */}
+            {/* <hr /> */}
+            {/* <Assembler /> */}
             <hr />
-            <Assembler />
-            <hr />
-            <BytesViewTable />
+            {/* <BytesViewTable /> */}
             {/* <hr /> */}
             {/* <BytesView /> */}
-            {/* <ElfReader /> */}
+            <ElfReader />
             {/* <hr /> */}
             {/* <Proto /> */}
         </>
