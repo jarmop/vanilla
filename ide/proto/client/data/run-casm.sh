@@ -1,1 +1,0 @@
-gcc -nostdlib -static -fno-pie -no-pie casm.c -o casm
