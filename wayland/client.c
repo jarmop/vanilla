@@ -9,11 +9,27 @@
 #include <errno.h>
 
 /**
- * __attribute__((__packed__)) tells gcc to place the struct members in a way that minimizes 
- * the memory usage. In other words, align the members based on the smallest member, 2 bytes 
- * in this case.
+ * Wl_display is always present singleton object so it gets the id 1.
+ * All the other objects are created by the server when needed.
  */
-struct __attribute__((__packed__)) wl_header {
+int wl_display_id = 1;
+
+/**
+ * Wl_display defines two requests (in /usr/share/wayland.xml), and get_registry 
+ * is the second, so it gets opcode 1. (The first gets opcode 0.)
+ */
+int wl_display_get_registry_opcode = 1;
+
+/**
+ * Header structure for the message that is sent between the wayland client and 
+ * the server.
+ * https://wayland.freedesktop.org/docs/html/ch04.html#sect-Protocol-Wire-Format
+ * 
+ * __attribute__((__packed__)) tells gcc to place the struct members in a way 
+ * that minimizes the memory usage. In other words, align the members based on 
+ * the smallest member, 2 bytes in this case.
+ */
+struct __attribute__((__packed__)) message_header {
     uint32_t object_id;
     uint16_t opcode;
     uint16_t size;
@@ -21,15 +37,29 @@ struct __attribute__((__packed__)) wl_header {
 
 /**
  * Round up value in fours (1 --> 4, 6 --> 8, 4 --> 4, etc.)
- * Adding 3u pushes the lowest two bits forward by two bits. Bitwise AND and NOT with 3u turns 
- * the lowest two bits to zero. These two together effectively round up a value by four.
+ * Adding 3u turns the lowest two bits into 1, and carries whatever value there 
+ * was forward. Bitwise AND and NOT with 3u turns the lowest two bits (that are 
+ * now 1) to zero. These two together effectively round up the value by four.
  * u = 32-bit unsigned integer
  * ~ = bitwise NOT
  * 3u = 00000000 00000000 00000000 00000011
  */ 
 static size_t align4(size_t n) { return (n + 3u) & ~3u; }
 
-static int connect_wayland_socket(void) {
+void print_msg(uint8_t *msg, int msg_len) {
+    for (int i = 0; i < msg_len; i++) {
+        fprintf(stderr, "%x ", msg[i]);
+    }
+    fprintf(stderr, "\n");
+}
+
+/**
+ * Create a socket and connect it to the wayland server socket on a path 
+ * defined by the environment variables XDG_RUNTIME_DIR and WAYLAND_DISPLAY. 
+ * WAYLAND_DISPLAY can also specify an absolute path in which case the 
+ * XDG_RUNTIME_DIR should of course be ignored.
+ */
+static int connect_server(void) {
     const char *runtime = getenv("XDG_RUNTIME_DIR");
     const char *display = getenv("WAYLAND_DISPLAY");
     if (!runtime) {
@@ -65,32 +95,39 @@ static int connect_wayland_socket(void) {
     return fd;
 }
 
-static int send_get_registry(int fd, uint32_t new_id) {
-    // wl_display (object id = 1), opcode 1 = get_registry
-    // payload: new_id (uint32)
-    uint8_t msg[12];
-    struct wl_header h;
-    h.object_id = 1;
-    h.opcode = 1;
-    h.size = sizeof(msg); // 8 + 4
+/**
+ * Request registry by sending "get_registry" msg to the wl_display. Usually 
+ * done with send (wrapper to sendto) syscall, but can be done with the generic 
+ * write syscall as well.
+ */
+static int get_registry(int fd, uint32_t new_id) {
+    long int sizeof_wl_header = sizeof(struct message_header);
+    long int sizeof_new_id = sizeof(new_id);
+    long int sizeof_msg = sizeof_wl_header + sizeof_new_id; // 8 + 4
+    uint8_t msg[sizeof_msg];
+    struct message_header h;
+    h.object_id = wl_display_id;
+    h.opcode = 1; // opcode 1 = get_registry
+    h.size = sizeof_msg;
 
-    memcpy(msg, &h, sizeof(h));
-    memcpy(msg + sizeof(h), &new_id, sizeof(new_id));
+    memcpy(msg, &h, sizeof_wl_header);
+    memcpy(msg + sizeof_wl_header, &new_id, sizeof_new_id);
 
-    ssize_t n = send(fd, msg, sizeof(msg), 0);
-    if (n != (ssize_t)sizeof(msg)) {
+    // ssize_t n = send(fd, msg, sizeof_msg, 0);
+    ssize_t n = write(fd, msg, sizeof_msg);
+    if (n != (ssize_t)sizeof_msg) {
         perror("send(get_registry)");
         return -1;
     }
     return 0;
 }
 
-// Read exactly n bytes unless EOF/error
-static int read_full(int fd, void *buf, size_t n) {
-    uint8_t *p = (uint8_t *)buf;
+// Read server response from the socket
+static int read_message(int fd, uint8_t *buf, size_t n) {
     size_t got = 0;
     while (got < n) {
-        ssize_t r = recv(fd, p + got, n - got, 0);
+        // ssize_t r = recv(fd, buf + got, n - got, 0);
+        ssize_t r = read(fd, buf + got, n - got);
         if (r == 0) return 0; // EOF
         if (r < 0) {
             if (errno == EINTR) continue;
@@ -102,8 +139,12 @@ static int read_full(int fd, void *buf, size_t n) {
     return 1;
 }
 
-static const char *parse_string(const uint8_t *payload, size_t payload_len, size_t *offset_io) {
-    size_t off = *offset_io;
+static const char *parse_payload(
+    const uint8_t *payload, 
+    size_t payload_len, 
+    size_t *offset
+) {
+    size_t off = *offset;
     if (off + 4 > payload_len) return NULL;
 
     uint32_t len;
@@ -111,7 +152,8 @@ static const char *parse_string(const uint8_t *payload, size_t payload_len, size
     off += 4;
 
     if (len == 0) {
-        // empty string is encoded as len=0 (rare) or len=1 with NUL; treat 0 as invalid here
+        // empty string is encoded as len=0 (rare) or len=1 with NUL; 
+        // treat 0 as invalid here
         return NULL;
     }
     if (off + len > payload_len) return NULL;
@@ -120,17 +162,17 @@ static const char *parse_string(const uint8_t *payload, size_t payload_len, size
     off += align4((size_t)len);
 
     if (off > payload_len) return NULL;
-    *offset_io = off;
+    *offset = off;
     return s;
 }
 
 int main(void) {
-    int fd = connect_wayland_socket();
-    if (fd < 0) return 1;
+    int wl_fd = connect_server();
+    if (wl_fd < 0) return 1;
 
     uint32_t registry_id = 2;
-    if (send_get_registry(fd, registry_id) < 0) {
-        close(fd);
+    if (get_registry(wl_fd, registry_id) < 0) {
+        close(wl_fd);
         return 1;
     }
 
@@ -141,14 +183,20 @@ int main(void) {
     // We stop after printing some globals (or on EOF).
     int globals_printed = 0;
 
+    // for (int i=0; i<1; i++) {
     for (;;) {
-        struct wl_header h;
-        int rr = read_full(fd, &h, sizeof(h));
-        if (rr == 0) {
+        // First read the header to get the size of the payload 
+        struct message_header h;
+        int bytes_read = read_message(wl_fd, (uint8_t *)&h, sizeof(h));
+        if (bytes_read == 0) {
             fprintf(stderr, "EOF from compositor\n");
             break;
         }
-        if (rr < 0) break;
+        if (bytes_read < 0) break;
+
+        // fprintf(stderr, "----------\n");
+        // fprintf(stderr, "header: ");
+        // print_msg((uint8_t *)&h, sizeof(h));
 
         if (h.size < sizeof(h) || (h.size % 4) != 0) {
             fprintf(stderr, "Bad message size: %u\n", h.size);
@@ -163,10 +211,15 @@ int main(void) {
             break;
         }
 
+        // Read the payload
         if (payload_len) {
-            rr = read_full(fd, payload, payload_len);
-            if (rr <= 0) break;
+            bytes_read = read_message(wl_fd, payload, payload_len);
+            if (bytes_read <= 0) break;
         }
+
+        // fprintf(stderr, "payload_len: %ld\n", payload_len);
+        // fprintf(stderr, "payload:\n");
+        // print_msg(payload, payload_len);
 
         // Decode registry globals
         if (h.object_id == registry_id) {
@@ -178,15 +231,16 @@ int main(void) {
                 memcpy(&name, payload + off, 4);
                 off += 4;
 
-                const char *iface = parse_string(payload, payload_len, &off);
-                if (!iface) continue;
+                const char *interface = parse_payload(payload, payload_len, &off);
+                if (!interface) continue;
 
                 if (off + 4 > payload_len) continue;
                 uint32_t version;
                 memcpy(&version, payload + off, 4);
                 off += 4;
 
-                printf("global: name=%u interface=%s version=%u\n", name, iface, version);
+                printf("%u\tv%u\t%s\n", name, version, interface);
+                
                 globals_printed++;
 
                 // For a first milestone, bail after “enough” output.
@@ -206,6 +260,6 @@ int main(void) {
         }
     }
 
-    close(fd);
+    close(wl_fd);
     return 0;
 }
