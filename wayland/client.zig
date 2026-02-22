@@ -1,15 +1,14 @@
 const std = @import("std");
 const linux = std.os.linux;
-const allocator = std.heap.c_allocator;
+const Init = std.process.Init;
+const Environ = std.process.Environ;
 
-fn connect_server() !i32 {
+fn connect_server(env_map: *Environ.Map) !i32 {
     // zig implementation of linux.socket return usize which matches the address space of the system,
     // so 64-bit in my case, so need to cast to 32-bit int which is expected by the connect syscall.
     const fd: i32 = @intCast(linux.socket(linux.AF.UNIX, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, 0));
 
     var path: [108]u8 = @splat(0);
-    var env_map = try std.process.getEnvMap(allocator);
-    defer env_map.deinit();
     const runtime = env_map.get("XDG_RUNTIME_DIR").?;
     const display = env_map.get("WAYLAND_DISPLAY").?;
     const path_len = runtime.len + 1 + display.len;
@@ -42,8 +41,8 @@ fn get_registry(fd: i32) void {
 // const Header = extern struct { object_id: u32, opcode: u16, size: u16 };
 const Header = packed struct { object_id: u32, opcode: u16, size: u16 };
 
-pub fn main() !void {
-    const fd = try connect_server();
+pub fn main(init: Init) !void {
+    const fd = try connect_server(init.environ_map);
     std.debug.print("fd: {}\n", .{fd});
 
     get_registry(fd);
