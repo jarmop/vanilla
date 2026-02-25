@@ -4,17 +4,26 @@ const linux = std.os.linux;
 const Init = std.process.Init;
 const Environ = std.process.Environ;
 
-const display_id: u32 = 1;
-const registry_id: u32 = 2;
-const wl_compositor_id: u32 = 3;
-const wl_compositor_iname = "wl_compositor";
-const wl_shm_id: u32 = 4;
-const wl_shm_iname = "wl_shm";
+var fd: i32 = undefined;
 
-fn connectServer(env_map: *Environ.Map) !i32 {
+var new_id: u32 = 1;
+inline fn newId() u32 {
+    new_id += 1;
+    return new_id;
+}
+
+const display_id: u32 = 1;
+var registry_id: u32 = 0;
+var wl_compositor_id: u32 = 0;
+const wl_compositor_iname = "wl_compositor";
+var wl_shm_id: u32 = 0;
+const wl_shm_iname = "wl_shm";
+var wl_surface_id: u32 = 0;
+
+fn connectServer(env_map: *Environ.Map) !void {
     // zig implementation of linux.socket return usize which matches the address space of the system,
     // so 64-bit in my case, so need to cast to 32-bit int which is expected by the connect syscall.
-    const fd: i32 = @intCast(linux.socket(linux.AF.UNIX, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, 0));
+    fd = @intCast(linux.socket(linux.AF.UNIX, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, 0));
 
     var path: [108]u8 = @splat(0);
     const runtime = env_map.get("XDG_RUNTIME_DIR").?;
@@ -34,8 +43,6 @@ fn connectServer(env_map: *Environ.Map) !i32 {
         print("Connect error: {}\n", .{connectError32});
         std.os.linux.exit(1);
     }
-
-    return fd;
 }
 
 const Header = packed struct { object_id: u32, opcode: u16, size: u16 };
@@ -45,12 +52,13 @@ inline fn toBytes(val: anytype) []const u8 {
     return &@as([@sizeOf(@TypeOf(val))]u8, @bitCast(val));
 }
 
-fn getRegistry(fd: i32, id: u32) void {
+fn getRegistry() void {
     const header: Header = .{ .object_id = display_id, .opcode = 1, .size = 12 };
     const headerBytes = toBytes(header);
 
     const GetRegistryPayload = packed struct { registry: u32 };
-    const payload: GetRegistryPayload = .{ .registry = id };
+    registry_id = newId();
+    const payload: GetRegistryPayload = .{ .registry = registry_id };
     const payloadBytes = toBytes(payload);
 
     var msg: [headerBytes.len + @sizeOf(GetRegistryPayload)]u8 = undefined;
@@ -81,7 +89,7 @@ inline fn align4(n: u32) u32 {
 /// name and new_id, but it actually takes two more: the interface_name and the interface_version.
 /// The need for these extra arguments can apparently be deduced from the fact that the new_id arg
 /// tag does not contain the interface attribute. In other words, the interface is not specified.
-inline fn registry_bind(fd: i32, name: u32, interface_name: []const u8, interface_version: u32, id: u32) void {
+inline fn registry_bind(name: u32, interface_name: []const u8, interface_version: u32, id: u32) void {
     const strlen: u32 = interface_name.len + 1;
     var str: [4 + align4(strlen)]u8 = @splat(0);
     @memcpy(str[0..4], toBytes(strlen));
@@ -96,7 +104,7 @@ inline fn registry_bind(fd: i32, name: u32, interface_name: []const u8, interfac
     const bind_header: Header = .{ .object_id = registry_id, .opcode = 0, .size = @sizeOf(Header) + bind_payload_size };
     const bind_header_bytes = toBytes(bind_header);
 
-    var msg: [bind_header_bytes.len + bind_payload_size]u8 = undefined;
+    var msg: [@sizeOf(Header) + bind_payload_size]u8 = undefined;
     @memcpy(msg[0..bind_header_bytes.len], bind_header_bytes);
     @memcpy(msg[bind_header_bytes.len..msg.len], &bind_payload_bytes);
 
@@ -106,11 +114,24 @@ inline fn registry_bind(fd: i32, name: u32, interface_name: []const u8, interfac
     print("Bind {s}: wrote {} bytes\n", .{ interface_name, n });
 }
 
-pub fn main(init: Init) !void {
-    const fd = try connectServer(init.environ_map);
-    // print("fd: {}\n", .{fd});
+inline fn wl_compositor_create_surface() void {
+    const header: Header = .{ .object_id = wl_compositor_id, .opcode = 0, .size = 12 };
+    const header_bytes = toBytes(header);
 
-    getRegistry(fd, registry_id);
+    wl_surface_id = newId();
+    const payload_bytes = toBytes(@as(u32, wl_surface_id));
+
+    var msg: [@sizeOf(Header) + @sizeOf(@TypeOf(wl_surface_id))]u8 = undefined;
+    @memcpy(msg[0..header_bytes.len], header_bytes);
+    @memcpy(msg[header_bytes.len..msg.len], payload_bytes);
+
+    _ = linux.write(fd, &msg, msg.len);
+}
+
+pub fn main(init: Init) !void {
+    try connectServer(init.environ_map);
+
+    getRegistry();
 
     var i: u32 = 0;
     while (true) : (i += 1) {
@@ -146,9 +167,12 @@ pub fn main(init: Init) !void {
             // printBytes("wl_compositor");
 
             if (std.mem.eql(u8, interface_name, wl_compositor_iname)) {
-                registry_bind(fd, name, wl_compositor_iname, version, wl_compositor_id);
+                wl_compositor_id = newId();
+                registry_bind(name, wl_compositor_iname, version, wl_compositor_id);
+                wl_compositor_create_surface();
             } else if (std.mem.eql(u8, interface_name, wl_shm_iname)) {
-                registry_bind(fd, name, wl_shm_iname, version, wl_shm_id);
+                wl_shm_id = newId();
+                registry_bind(name, wl_shm_iname, version, wl_shm_id);
             }
         }
     }
