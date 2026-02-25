@@ -5,6 +5,11 @@ const Init = std.process.Init;
 const Environ = std.process.Environ;
 
 const display_id: u32 = 1;
+const registry_id: u32 = 2;
+const wl_compositor_id: u32 = 3;
+const wl_compositor_iname = "wl_compositor";
+const wl_shm_id: u32 = 4;
+const wl_shm_iname = "wl_shm";
 
 fn connectServer(env_map: *Environ.Map) !i32 {
     // zig implementation of linux.socket return usize which matches the address space of the system,
@@ -68,11 +73,43 @@ fn printBytes(arr: []const u8) void {
     print("\n", .{});
 }
 
+inline fn align4(n: u32) u32 {
+    return (n + 0b11) & ~@as(u32, 0b11);
+}
+
+/// The description of bind request in wayland.xml makes it look like it only takes two arguments,
+/// name and new_id, but it actually takes two more: the interface_name and the interface_version.
+/// The need for these extra arguments can apparently be deduced from the fact that the new_id arg
+/// tag does not contain the interface attribute. In other words, the interface is not specified.
+inline fn registry_bind(fd: i32, name: u32, interface_name: []const u8, interface_version: u32, id: u32) void {
+    const strlen: u32 = interface_name.len + 1;
+    var str: [4 + align4(strlen)]u8 = @splat(0);
+    @memcpy(str[0..4], toBytes(strlen));
+    @memcpy(str[4..(4 + interface_name.len)], interface_name);
+    const bind_payload_size = 4 + str.len + 4 + 4;
+    var bind_payload_bytes: [bind_payload_size]u8 = undefined;
+    @memcpy(bind_payload_bytes[0..4], toBytes(name));
+    @memcpy(bind_payload_bytes[4..(4 + str.len)], &str);
+    @memcpy(bind_payload_bytes[(4 + str.len)..(4 + str.len + 4)], toBytes(interface_version));
+    @memcpy(bind_payload_bytes[(4 + str.len + 4)..bind_payload_size], toBytes(id));
+
+    const bind_header: Header = .{ .object_id = registry_id, .opcode = 0, .size = @sizeOf(Header) + bind_payload_size };
+    const bind_header_bytes = toBytes(bind_header);
+
+    var msg: [bind_header_bytes.len + bind_payload_size]u8 = undefined;
+    @memcpy(msg[0..bind_header_bytes.len], bind_header_bytes);
+    @memcpy(msg[bind_header_bytes.len..msg.len], &bind_payload_bytes);
+
+    // printBytes(&msg);
+
+    const n = linux.write(fd, &msg, msg.len);
+    print("Bind {s}: wrote {} bytes\n", .{ interface_name, n });
+}
+
 pub fn main(init: Init) !void {
     const fd = try connectServer(init.environ_map);
     // print("fd: {}\n", .{fd});
 
-    const registry_id: u32 = 2;
     getRegistry(fd, registry_id);
 
     var i: u32 = 0;
@@ -108,42 +145,10 @@ pub fn main(init: Init) !void {
             // printBytes(interface_name);
             // printBytes("wl_compositor");
 
-            // const foo = std.mem.find(u8, interface_name, "wl_compositor") orelse 1;
-
-            if (std.mem.eql(u8, interface_name, "wl_compositor")) {
-                // if (@bitCast(@as(u1, @intCast(std.mem.find(u8, interface_name, "wl_compositor").?)))) {
-                // if (std.mem.find(u8, interface_name, "wl_compositor").? > 0) {
-                // if (foo == 0) {
-                print("match\n", .{});
-                const strlen: u32 = 14;
-                // +2 to align by four bytes
-                var str: [4 + strlen + 2]u8 = @splat(0);
-                // const prkl = [_]u8{0};
-                @memcpy(str[0..4], toBytes(strlen));
-                @memcpy(str[4 .. 4 + (strlen - 1)], interface_name);
-                // @memcpy(str[(str.len - 1)..str.len], &prkl);
-                // const BindPayload = packed struct { name: u32, interface: [18]u8, version: u32, new_id: u32 };
-                // const bind_payload: BindPayload = .{ .name = name, .interface = str, .version = version, .new_id = 3 };
-                // const bind_payload_bytes = toBytes(bind_payload);
-                const bind_payload_size = 4 + 20 + 4 + 4;
-                var bind_payload_bytes: [bind_payload_size]u8 = undefined;
-                const wl_compositor_id: u32 = 3;
-                @memcpy(bind_payload_bytes[0..4], toBytes(name));
-                @memcpy(bind_payload_bytes[4..(4 + str.len)], &str);
-                @memcpy(bind_payload_bytes[(4 + str.len)..(4 + str.len + 4)], toBytes(version));
-                @memcpy(bind_payload_bytes[(4 + str.len + 4)..bind_payload_size], toBytes(wl_compositor_id));
-
-                const bind_header: Header = .{ .object_id = registry_id, .opcode = 0, .size = @sizeOf(Header) + bind_payload_size };
-                const bind_header_bytes = toBytes(bind_header);
-
-                var msg: [bind_header_bytes.len + bind_payload_size]u8 = undefined;
-                @memcpy(msg[0..bind_header_bytes.len], bind_header_bytes);
-                @memcpy(msg[bind_header_bytes.len..msg.len], &bind_payload_bytes);
-
-                printBytes(&msg);
-
-                const n = linux.write(fd, &msg, msg.len);
-                print("Wrote {}\n", .{n});
+            if (std.mem.eql(u8, interface_name, wl_compositor_iname)) {
+                registry_bind(fd, name, wl_compositor_iname, version, wl_compositor_id);
+            } else if (std.mem.eql(u8, interface_name, wl_shm_iname)) {
+                registry_bind(fd, name, wl_shm_iname, version, wl_shm_id);
             }
         }
     }
