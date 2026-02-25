@@ -6,7 +6,7 @@ const Environ = std.process.Environ;
 
 const display_id: u32 = 1;
 
-fn connect_server(env_map: *Environ.Map) !i32 {
+fn connectServer(env_map: *Environ.Map) !i32 {
     // zig implementation of linux.socket return usize which matches the address space of the system,
     // so 64-bit in my case, so need to cast to 32-bit int which is expected by the connect syscall.
     const fd: i32 = @intCast(linux.socket(linux.AF.UNIX, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, 0));
@@ -40,7 +40,7 @@ inline fn toBytes(val: anytype) []const u8 {
     return &@as([@sizeOf(@TypeOf(val))]u8, @bitCast(val));
 }
 
-fn get_registry(fd: i32, id: u32) void {
+fn getRegistry(fd: i32, id: u32) void {
     const header: Header = .{ .object_id = display_id, .opcode = 1, .size = 12 };
     const headerBytes = toBytes(header);
 
@@ -55,16 +55,25 @@ fn get_registry(fd: i32, id: u32) void {
     // const msg = [_]u8{ 1, 0, 0, 0, 1, 0, 12, 0, 2, 0, 0, 0 };
 
     _ = linux.write(fd, &msg, msg.len);
+    // _ = linux.write(fd, @ptrCast(headerBytes), @sizeOf(Header));
+    // _ = linux.write(fd, @ptrCast(payloadBytes), @sizeOf(GetRegistryPayload));
 
     // print("Wrote {} bytes\n", .{n});
 }
 
+fn printBytes(arr: []const u8) void {
+    for (arr) |value| {
+        print("{x}|", .{value});
+    }
+    print("\n", .{});
+}
+
 pub fn main(init: Init) !void {
-    const fd = try connect_server(init.environ_map);
+    const fd = try connectServer(init.environ_map);
     // print("fd: {}\n", .{fd});
 
     const registry_id: u32 = 2;
-    get_registry(fd, registry_id);
+    getRegistry(fd, registry_id);
 
     var i: u32 = 0;
     while (true) : (i += 1) {
@@ -88,16 +97,54 @@ pub fn main(init: Init) !void {
             const name = std.mem.readInt(u32, payload[0..4], .little);
             // interface implemented by the object
             const interface = payload[4..(payload_size - 4)];
-            const interface_name_len = std.mem.readInt(u32, interface[0..4], .little);
+            // -1 to ignore the null delimiter as zig strings don't have those
+            const interface_name_len = std.mem.readInt(u32, interface[0..4], .little) - 1;
+            // const interface_name_len = std.mem.readInt(u32, interface[0..4], .little);
             const interface_name = interface[4..(4 + interface_name_len)];
             // interface version
             const version = std.mem.readInt(u32, payload[(payload_size - 4)..payload_size][0..4], .little);
-            // print("Read {} bytes – name: {}, version: {}, i_name: {s}, i_name_len: {}\n", .{ n3, name, version, interface_name, interface_name_len });
             print("{}\tv{}\t{s},\n", .{ name, version, interface_name });
-            // for (interface) |value| {
-            //     print("{x}|", .{value});
-            // }
-            // print("\n", .{});
+
+            // printBytes(interface_name);
+            // printBytes("wl_compositor");
+
+            // const foo = std.mem.find(u8, interface_name, "wl_compositor") orelse 1;
+
+            if (std.mem.eql(u8, interface_name, "wl_compositor")) {
+                // if (@bitCast(@as(u1, @intCast(std.mem.find(u8, interface_name, "wl_compositor").?)))) {
+                // if (std.mem.find(u8, interface_name, "wl_compositor").? > 0) {
+                // if (foo == 0) {
+                print("match\n", .{});
+                const strlen: u32 = 14;
+                // +2 to align by four bytes
+                var str: [4 + strlen + 2]u8 = @splat(0);
+                // const prkl = [_]u8{0};
+                @memcpy(str[0..4], toBytes(strlen));
+                @memcpy(str[4 .. 4 + (strlen - 1)], interface_name);
+                // @memcpy(str[(str.len - 1)..str.len], &prkl);
+                // const BindPayload = packed struct { name: u32, interface: [18]u8, version: u32, new_id: u32 };
+                // const bind_payload: BindPayload = .{ .name = name, .interface = str, .version = version, .new_id = 3 };
+                // const bind_payload_bytes = toBytes(bind_payload);
+                const bind_payload_size = 4 + 20 + 4 + 4;
+                var bind_payload_bytes: [bind_payload_size]u8 = undefined;
+                const wl_compositor_id: u32 = 3;
+                @memcpy(bind_payload_bytes[0..4], toBytes(name));
+                @memcpy(bind_payload_bytes[4..(4 + str.len)], &str);
+                @memcpy(bind_payload_bytes[(4 + str.len)..(4 + str.len + 4)], toBytes(version));
+                @memcpy(bind_payload_bytes[(4 + str.len + 4)..bind_payload_size], toBytes(wl_compositor_id));
+
+                const bind_header: Header = .{ .object_id = registry_id, .opcode = 0, .size = @sizeOf(Header) + bind_payload_size };
+                const bind_header_bytes = toBytes(bind_header);
+
+                var msg: [bind_header_bytes.len + bind_payload_size]u8 = undefined;
+                @memcpy(msg[0..bind_header_bytes.len], bind_header_bytes);
+                @memcpy(msg[bind_header_bytes.len..msg.len], &bind_payload_bytes);
+
+                printBytes(&msg);
+
+                const n = linux.write(fd, &msg, msg.len);
+                print("Wrote {}\n", .{n});
+            }
         }
     }
 }
