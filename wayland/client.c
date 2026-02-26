@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/mman.h>
 #include <unistd.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -22,6 +23,13 @@ char *wl_compositor_iname = "wl_compositor";
 uint32_t wl_shm_id = 0;
 char *wl_shm_iname = "wl_shm";
 uint32_t wl_surface_id = 0;
+uint32_t wl_shm_pool_id = 0;
+
+const uint32_t buffer_width = 800;
+const uint32_t buffer_height = 1000;
+const uint32_t pixel_size = 4;
+uint32_t buffer_size = buffer_width * buffer_height * pixel_size;
+uint32_t *buffer;
 
 int new_id = 1;
 int get_new_id() {
@@ -246,7 +254,88 @@ static int wl_compositor_create_surface() {
     return 0;
 }
 
+/**
+ * Send fd as ancillary data.
+ */
+static int send_with_fd(int sock, const void *wl_msg, size_t len, int fd_to_send) {
+    struct iovec iov = {
+        .iov_base = (void*)wl_msg,
+        .iov_len = len,
+    };
+
+    size_t fd_size = sizeof(int);
+
+    /**
+     * Union with a member of type cmsghdr makes sure that the cmsgbuf is 
+     * aligned suitably for the struct cmsghdr (though this is rarely, if ever, 
+     * an issue on x86-64).
+     */
+    union {
+        unsigned char buf[CMSG_SPACE(fd_size)]; // size of the fd_to_send
+        struct cmsghdr _;
+    } cmsgbuf;
+    memset(&cmsgbuf, 0, sizeof(cmsgbuf));
+
+    struct msghdr msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+
+    msg.msg_control = cmsgbuf.buf;
+    msg.msg_controllen = sizeof(cmsgbuf.buf);
+
+    struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+    cmsg->cmsg_level = SOL_SOCKET;
+    cmsg->cmsg_type  = SCM_RIGHTS;
+    cmsg->cmsg_len   = CMSG_LEN(fd_size);
+
+    memcpy(CMSG_DATA(cmsg), &fd_to_send, fd_size);
+
+    // Some kernels want msg_controllen to match exactly the used length:
+    // msg.msg_controllen = cmsg->cmsg_len;
+
+    ssize_t n = sendmsg(sock, &msg, MSG_NOSIGNAL);
+    if (n < 0) return -1;
+    if ((size_t)n != len) return -2;
+
+    // fprintf(stderr, "send_with_fd: wrote %ld bytes \n", n);
+
+    return 0;
+}
+
+static int wl_shm_create_pool() {
+    wl_shm_pool_id = get_new_id();
+    int shm_fd = memfd_create("shm-buffer", 0);
+    buffer = mmap(NULL, (size_t)buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    int sizeof_payload = 12;
+    uint8_t payload[sizeof_payload];
+    memcpy(payload, (uint8_t *)&wl_shm_pool_id, 4);
+    memcpy(payload + 4, (uint8_t *)&shm_fd, 4);
+    memcpy(payload + 8, (uint8_t *)&buffer_size, 4);
+
+    long int sizeof_header = sizeof(struct message_header);
+    long int sizeof_msg = sizeof_header + sizeof_payload;
+    struct message_header h;
+    h.object_id = wl_shm_id;
+    h.opcode = 0;
+    h.size = sizeof_msg;
+
+    uint8_t msg[sizeof_msg];
+    memcpy(msg, &h, sizeof_header);
+    memcpy(msg + sizeof_header, payload, sizeof_payload);
+
+    // print_msg(msg, sizeof_msg);
+
+    int failed = send_with_fd(wl_fd, msg, sizeof_msg, shm_fd);
+    if (failed) {
+        perror("wl_shm_create_pool");
+        return -1;
+    }
+    return 0;
+}
+
 int main(void) {
+
     wl_fd = connect_server();
     if (wl_fd < 0) return 1;
 
@@ -321,6 +410,7 @@ int main(void) {
                 } else if (strcmp(interface, wl_shm_iname) == 0) {
                     wl_shm_id = get_new_id();
                     registry_bind(name, interface, version, wl_shm_id);
+                    wl_shm_create_pool();
                 }
                 
             } else if (h.opcode == wl_display_id) {
@@ -332,9 +422,18 @@ int main(void) {
                 }
             }
         } else if (h.object_id == 1 && h.opcode == 0) {
-            // wl_display.error(object_id, code, message)
-            // We’re not parsing it fully here, but it’s useful to know.
-            fprintf(stderr, "wl_display.error received (not decoded in demo)\n");
+            int error_object_id = *(uint32_t *)payload;
+            int error_code = *(uint32_t *)(payload + 4);
+            int error_msg_len = *(uint32_t *)(payload + 8);
+            char *error_msg = malloc(error_msg_len);
+            strcpy(error_msg, (char *)(payload + 12));
+
+            fprintf(
+                stderr, 
+                "Error – object_id: %d, error_code: %d, error_msg: %s \n", 
+                error_object_id, error_code, error_msg
+            );
+            free(error_msg);
         }
     }
 
