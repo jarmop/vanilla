@@ -21,6 +21,7 @@ uint32_t wl_compositor_id = 0;
 char *wl_compositor_iname = "wl_compositor";
 uint32_t wl_shm_id = 0;
 char *wl_shm_iname = "wl_shm";
+uint32_t wl_surface_id = 0;
 
 int new_id = 1;
 int get_new_id() {
@@ -114,23 +115,22 @@ static int connect_server(void) {
  * done with send (wrapper to sendto) syscall, but can be done with the generic 
  * write syscall as well.
  */
-static int get_registry(int fd, uint32_t new_id) {
+static int get_registry() {
     long int sizeof_wl_header = sizeof(struct message_header);
-    long int sizeof_new_id = sizeof(new_id);
-    long int sizeof_msg = sizeof_wl_header + sizeof_new_id; // 8 + 4
-    uint8_t msg[sizeof_msg];
+    long int sizeof_id = sizeof(registry_id);
+    long int sizeof_msg = sizeof_wl_header + sizeof_id; // 8 + 4
     struct message_header h;
     h.object_id = wl_display_id;
     h.opcode = 1; // opcode 1 = get_registry
     h.size = sizeof_msg;
 
+    uint8_t msg[sizeof_msg];
     memcpy(msg, &h, sizeof_wl_header);
-    memcpy(msg + sizeof_wl_header, &new_id, sizeof_new_id);
+    memcpy(msg + sizeof_wl_header, &registry_id, sizeof_id);
 
-    // ssize_t n = send(fd, msg, sizeof_msg, 0);
-    ssize_t n = write(fd, msg, sizeof_msg);
+    ssize_t n = write(wl_fd, msg, sizeof_msg);
     if (n != (ssize_t)sizeof_msg) {
-        perror("send(get_registry)");
+        perror("get_registry");
         return -1;
     }
     return 0;
@@ -220,6 +220,32 @@ static int registry_bind(u_int32_t name, const char *interface_name, uint32_t in
     return 0;
 }
 
+static int wl_compositor_create_surface() {
+    wl_surface_id = get_new_id();
+    long int sizeof_header = sizeof(struct message_header);
+    long int sizeof_id = sizeof(wl_surface_id);
+    long int sizeof_msg = sizeof_header + sizeof_id;
+    struct message_header h;
+    h.object_id = wl_compositor_id;
+    h.opcode = 0;
+    h.size = sizeof_msg;
+
+    uint8_t msg[sizeof_msg];
+    memcpy(msg, &h, sizeof_header);
+    memcpy(msg + sizeof_header, &wl_surface_id, sizeof_id);
+
+    ssize_t n = write(wl_fd, msg, sizeof_msg);
+    if (n != (ssize_t)sizeof_msg) {
+        perror("wl_compositor_create_surface");
+        return -1;
+    }
+
+    // fprintf(stderr, "Create surface: wrote %ld bytes \n", n);
+    // print_msg(msg, sizeof_msg);
+
+    return 0;
+}
+
 int main(void) {
     wl_fd = connect_server();
     if (wl_fd < 0) return 1;
@@ -291,6 +317,7 @@ int main(void) {
                 if (strcmp(interface, wl_compositor_iname) == 0) {
                     wl_compositor_id = get_new_id();
                     registry_bind(name, interface, version, wl_compositor_id);
+                    wl_compositor_create_surface();
                 } else if (strcmp(interface, wl_shm_iname) == 0) {
                     wl_shm_id = get_new_id();
                     registry_bind(name, interface, version, wl_shm_id);

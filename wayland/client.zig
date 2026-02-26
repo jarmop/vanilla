@@ -129,6 +129,7 @@ inline fn wlCompositorCreateSurface() void {
     @memcpy(msg[header_bytes.len..msg.len], payload_bytes);
 
     _ = linux.write(fd, &msg, msg.len);
+    // printBytes(&msg);
 }
 
 pub fn main(init: Init) !void {
