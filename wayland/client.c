@@ -8,11 +8,25 @@
 #include <string.h>
 #include <errno.h>
 
+
+int wl_fd;
+
 /**
  * Wl_display is always present singleton object so it gets the id 1.
  * All the other objects are created by the server when needed.
  */
-int wl_display_id = 1;
+uint32_t wl_display_id = 1;
+uint32_t registry_id = 0;
+uint32_t wl_compositor_id = 0;
+char *wl_compositor_iname = "wl_compositor";
+uint32_t wl_shm_id = 0;
+char *wl_shm_iname = "wl_shm";
+
+int new_id = 1;
+int get_new_id() {
+    new_id++;
+    return new_id;
+}
 
 /**
  * Wl_display defines two requests (in /usr/share/wayland.xml), and get_registry 
@@ -166,22 +180,55 @@ static const char *parse_payload(
     return s;
 }
 
+static int registry_bind(u_int32_t name, const char *interface_name, uint32_t interface_version, uint32_t id) {
+    long int sizeof_header = sizeof(struct message_header);
+
+    // Include the null byte in length
+    uint32_t interface_name_len = strlen(interface_name) + 1;
+    long int str_len = align4(sizeof(uint32_t) + interface_name_len);
+    uint8_t str[str_len];
+    memset(str, 0, str_len);
+    memcpy(str, &interface_name_len, 4);
+    memcpy(str + 4, interface_name, interface_name_len);
+
+    long int sizeof_payload = 4 + str_len + 4 + 4;
+    uint8_t p[sizeof_payload];
+    memcpy(p, &name, 4);
+    memcpy(p + 4, str, str_len);
+    memcpy(p + 4 + str_len, &interface_version, 4);
+    memcpy(p + 4 + str_len + 4 , &id, 4);
+
+    long int sizeof_msg = sizeof_header + sizeof_payload;
+    struct message_header h;
+    h.object_id = registry_id;
+    h.opcode = 0; // opcode 1 = get_registry
+    h.size = sizeof_msg;
+
+    uint8_t msg[sizeof_msg];
+    memcpy(msg, &h, sizeof_header);
+    memcpy(msg + sizeof_header, &p, sizeof_payload);
+
+    ssize_t n = write(wl_fd, msg, sizeof_msg);
+    if (n != (ssize_t)sizeof_msg) {
+        perror("send(registry_bind)");
+        return -1;
+    }
+
+    // fprintf(stderr, "Bind %s: wrote %ld bytes \n", interface_name, n);
+    // print_msg(msg, sizeof_msg);
+
+    return 0;
+}
+
 int main(void) {
-    int wl_fd = connect_server();
+    wl_fd = connect_server();
     if (wl_fd < 0) return 1;
 
-    uint32_t registry_id = 2;
+    registry_id = get_new_id();
     if (get_registry(wl_fd, registry_id) < 0) {
         close(wl_fd);
         return 1;
     }
-
-    // Now: receive messages. We’ll decode:
-    // - wl_registry.global (object_id == registry_id, opcode 0)
-    // - wl_registry.global_remove (object_id == registry_id, opcode 1)
-    //
-    // We stop after printing some globals (or on EOF).
-    int globals_printed = 0;
 
     // for (int i=0; i<1; i++) {
     for (;;) {
@@ -240,12 +287,16 @@ int main(void) {
                 off += 4;
 
                 printf("%u\tv%u\t%s\n", name, version, interface);
-                
-                globals_printed++;
 
-                // For a first milestone, bail after “enough” output.
-                if (globals_printed >= 15) break;
-            } else if (h.opcode == 1) {
+                if (strcmp(interface, wl_compositor_iname) == 0) {
+                    wl_compositor_id = get_new_id();
+                    registry_bind(name, interface, version, wl_compositor_id);
+                } else if (strcmp(interface, wl_shm_iname) == 0) {
+                    wl_shm_id = get_new_id();
+                    registry_bind(name, interface, version, wl_shm_id);
+                }
+                
+            } else if (h.opcode == wl_display_id) {
                 // wl_registry.global_remove(uint32 name)
                 if (payload_len >= 4) {
                     uint32_t name;

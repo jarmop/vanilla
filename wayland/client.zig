@@ -76,7 +76,7 @@ fn getRegistry() void {
 
 fn printBytes(arr: []const u8) void {
     for (arr) |value| {
-        print("{x}|", .{value});
+        print("{x} ", .{value});
     }
     print("\n", .{});
 }
@@ -89,7 +89,7 @@ inline fn align4(n: u32) u32 {
 /// name and new_id, but it actually takes two more: the interface_name and the interface_version.
 /// The need for these extra arguments can apparently be deduced from the fact that the new_id arg
 /// tag does not contain the interface attribute. In other words, the interface is not specified.
-inline fn registry_bind(name: u32, interface_name: []const u8, interface_version: u32, id: u32) void {
+inline fn registryBind(name: u32, interface_name: []const u8, interface_version: u32, id: u32) void {
     const strlen: u32 = interface_name.len + 1;
     var str: [4 + align4(strlen)]u8 = @splat(0);
     @memcpy(str[0..4], toBytes(strlen));
@@ -108,13 +108,16 @@ inline fn registry_bind(name: u32, interface_name: []const u8, interface_version
     @memcpy(msg[0..bind_header_bytes.len], bind_header_bytes);
     @memcpy(msg[bind_header_bytes.len..msg.len], &bind_payload_bytes);
 
-    // printBytes(&msg);
-
     const n = linux.write(fd, &msg, msg.len);
-    print("Bind {s}: wrote {} bytes\n", .{ interface_name, n });
+    if (n != msg.len) {
+        print("registry_bind error\n", .{});
+        std.os.linux.exit(1);
+    }
+    // print("Bind {s}: wrote {} bytes\n", .{ interface_name, n });
+    // printBytes(&msg);
 }
 
-inline fn wl_compositor_create_surface() void {
+inline fn wlCompositorCreateSurface() void {
     const header: Header = .{ .object_id = wl_compositor_id, .opcode = 0, .size = 12 };
     const header_bytes = toBytes(header);
 
@@ -168,11 +171,11 @@ pub fn main(init: Init) !void {
 
             if (std.mem.eql(u8, interface_name, wl_compositor_iname)) {
                 wl_compositor_id = newId();
-                registry_bind(name, wl_compositor_iname, version, wl_compositor_id);
-                wl_compositor_create_surface();
+                registryBind(name, wl_compositor_iname, version, wl_compositor_id);
+                wlCompositorCreateSurface();
             } else if (std.mem.eql(u8, interface_name, wl_shm_iname)) {
                 wl_shm_id = newId();
-                registry_bind(name, wl_shm_iname, version, wl_shm_id);
+                registryBind(name, wl_shm_iname, version, wl_shm_id);
             }
         }
     }
