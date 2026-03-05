@@ -2,6 +2,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -17,16 +18,27 @@ int wl_fd;
  * All the other objects are created by the server when needed.
  */
 uint32_t wl_display_id = 1;
-uint32_t registry_id = 0;
+uint32_t wl_display_event_opcode_error = 0;
+uint32_t wl_display_error_code_invalid = 0;
+// enum wl_display_error_code { invalid_object, invalid_method, no_memory, implementation };
+char *wl_display_error_code[] = { 
+    "invalid_object",
+    "invalid_method",
+    "no_memory",
+    "implementation"
+};
+
+uint32_t wl_registry_id = 0;
 uint32_t wl_compositor_id = 0;
 char *wl_compositor_iname = "wl_compositor";
 uint32_t wl_shm_id = 0;
 char *wl_shm_iname = "wl_shm";
 uint32_t wl_surface_id = 0;
 uint32_t wl_shm_pool_id = 0;
+uint32_t wl_buffer_id = 0;
 
-const uint32_t buffer_width = 800;
-const uint32_t buffer_height = 1000;
+const uint32_t buffer_width = 400;
+const uint32_t buffer_height = 300;
 const uint32_t pixel_size = 4;
 uint32_t buffer_size = buffer_width * buffer_height * pixel_size;
 uint32_t *buffer;
@@ -90,6 +102,7 @@ static int connect_server(void) {
         return -1;
     }
     if (!display) display = "wayland-0";
+    // if (!display) display = "wayland-1";
 
     char path[108];
     // sun_path max is typically 108 including NUL
@@ -125,7 +138,7 @@ static int connect_server(void) {
  */
 static int get_registry() {
     long int sizeof_wl_header = sizeof(struct message_header);
-    long int sizeof_id = sizeof(registry_id);
+    long int sizeof_id = sizeof(wl_registry_id);
     long int sizeof_msg = sizeof_wl_header + sizeof_id; // 8 + 4
     struct message_header h;
     h.object_id = wl_display_id;
@@ -134,7 +147,7 @@ static int get_registry() {
 
     uint8_t msg[sizeof_msg];
     memcpy(msg, &h, sizeof_wl_header);
-    memcpy(msg + sizeof_wl_header, &registry_id, sizeof_id);
+    memcpy(msg + sizeof_wl_header, &wl_registry_id, sizeof_id);
 
     ssize_t n = write(wl_fd, msg, sizeof_msg);
     if (n != (ssize_t)sizeof_msg) {
@@ -208,7 +221,7 @@ static int registry_bind(u_int32_t name, const char *interface_name, uint32_t in
 
     long int sizeof_msg = sizeof_header + sizeof_payload;
     struct message_header h;
-    h.object_id = registry_id;
+    h.object_id = wl_registry_id;
     h.opcode = 0; // opcode 1 = get_registry
     h.size = sizeof_msg;
 
@@ -295,10 +308,16 @@ static int send_with_fd(int sock, const void *wl_msg, size_t len, int fd_to_send
     // msg.msg_controllen = cmsg->cmsg_len;
 
     ssize_t n = sendmsg(sock, &msg, MSG_NOSIGNAL);
+
+    // struct stat st;
+    // int status;
+    // status = fstat(fd_to_send, &st);
+    // fprintf(stderr, "fstat: status %d, size %ld \n", status, st.st_size);
+
     if (n < 0) return -1;
     if ((size_t)n != len) return -2;
 
-    // fprintf(stderr, "send_with_fd: wrote %ld bytes \n", n);
+    fprintf(stderr, "sent fd as ancillary data: wrote %ld bytes\n", n);
 
     return 0;
 }
@@ -306,12 +325,26 @@ static int send_with_fd(int sock, const void *wl_msg, size_t len, int fd_to_send
 static int wl_shm_create_pool() {
     wl_shm_pool_id = get_new_id();
     int shm_fd = memfd_create("shm-buffer", 0);
+    int n = ftruncate(shm_fd, buffer_size);
+    // fprintf(stderr, "buffer_size: %d\n", buffer_size);
+    if (n < 0) {
+        perror("ftruncate");
+        close(shm_fd);
+        return -1;
+    }
+
     buffer = mmap(NULL, (size_t)buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-    int sizeof_payload = 12;
+    if (buffer == MAP_FAILED) {
+        perror("mmap");
+        close(shm_fd);
+        buffer = NULL;
+        return -1;
+    }
+    
+    int sizeof_payload = 8;
     uint8_t payload[sizeof_payload];
     memcpy(payload, (uint8_t *)&wl_shm_pool_id, 4);
-    memcpy(payload + 4, (uint8_t *)&shm_fd, 4);
-    memcpy(payload + 8, (uint8_t *)&buffer_size, 4);
+    memcpy(payload + 4, (uint8_t *)&buffer_size, 4);
 
     long int sizeof_header = sizeof(struct message_header);
     long int sizeof_msg = sizeof_header + sizeof_payload;
@@ -324,7 +357,8 @@ static int wl_shm_create_pool() {
     memcpy(msg, &h, sizeof_header);
     memcpy(msg + sizeof_header, payload, sizeof_payload);
 
-    // print_msg(msg, sizeof_msg);
+    fprintf(stderr, "wl_shm_create_pool\n");
+    print_msg(msg, sizeof_msg);
 
     int failed = send_with_fd(wl_fd, msg, sizeof_msg, shm_fd);
     close(shm_fd);
@@ -335,18 +369,61 @@ static int wl_shm_create_pool() {
     return 0;
 }
 
-int main(void) {
+static int wl_shm_pool_create_buffer() {
+    wl_buffer_id = get_new_id();
+    int wl_shm_format_xrgb8888 = 1;
 
+    struct __attribute__((__packed__))  create_buffer_payload {
+        uint32_t id;
+        int offset;
+        int width;
+        int height;
+        int stride;
+        int format;
+    };
+    long int sizeof_payload = sizeof(struct create_buffer_payload);
+    struct create_buffer_payload p;
+    p.id = wl_buffer_id;
+    p.offset = 0;
+    p.width = buffer_width;
+    p.height = buffer_height;
+    p.stride = buffer_width * pixel_size;
+    p.format = wl_shm_format_xrgb8888;
+
+    long int sizeof_header = sizeof(struct message_header);
+    long int sizeof_msg = sizeof_header + sizeof_payload;
+    struct message_header h;
+    h.object_id = wl_shm_pool_id;
+    h.opcode = 0;
+    h.size = sizeof_msg;
+
+    uint8_t msg[sizeof_msg];
+    memcpy(msg, &h, sizeof_header);
+    memcpy(msg + sizeof_header, &p, sizeof_payload);
+
+    ssize_t n = write(wl_fd, msg, sizeof_msg);
+    if (n != (ssize_t)sizeof_msg) {
+        perror("wl_shm_pool_create_buffer");
+        return -1;
+    }
+
+    fprintf(stderr, "Create buffer: wrote %ld bytes \n", n);
+    print_msg(msg, sizeof_msg);
+
+    return 0;
+}
+
+
+int main(void) {
     wl_fd = connect_server();
     if (wl_fd < 0) return 1;
 
-    registry_id = get_new_id();
-    if (get_registry(wl_fd, registry_id) < 0) {
+    wl_registry_id = get_new_id();
+    if (get_registry(wl_fd, wl_registry_id) < 0) {
         close(wl_fd);
         return 1;
     }
 
-    // for (int i=0; i<1; i++) {
     for (;;) {
         // First read the header to get the size of the payload 
         struct message_header h;
@@ -383,9 +460,14 @@ int main(void) {
         // fprintf(stderr, "payload_len: %ld\n", payload_len);
         // fprintf(stderr, "payload:\n");
         // print_msg(payload, payload_len);
-
-        // Decode registry globals
-        if (h.object_id == registry_id) {
+        
+        if (h.object_id == wl_shm_id) {
+            uint32_t format;
+            memcpy(&format, payload, 4);
+            fprintf(stderr, "wl_shm calling, a valid format = %d\n", format);
+        } else if (h.object_id == wl_surface_id) {
+            fprintf(stderr, "wl_surface calling\n");
+        } else if (h.object_id == wl_registry_id) {
             if (h.opcode == 0) {
                 // wl_registry.global(uint32 name, string interface, uint32 version)
                 size_t off = 0;
@@ -412,6 +494,8 @@ int main(void) {
                     wl_shm_id = get_new_id();
                     registry_bind(name, interface, version, wl_shm_id);
                     wl_shm_create_pool();
+                    // sleep(5);
+                    wl_shm_pool_create_buffer();
                 }
                 
             } else if (h.opcode == wl_display_id) {
@@ -423,16 +507,37 @@ int main(void) {
                 }
             }
         } else if (h.object_id == 1 && h.opcode == 0) {
-            int error_object_id = *(uint32_t *)payload;
-            int error_code = *(uint32_t *)(payload + 4);
-            int error_msg_len = *(uint32_t *)(payload + 8);
+            uint32_t error_object_id = *(uint32_t *)payload;
+            uint32_t error_code = *(uint32_t *)(payload + 4);
+            uint32_t error_msg_len = *(uint32_t *)(payload + 8);
             char *error_msg = malloc(error_msg_len);
             strcpy(error_msg, (char *)(payload + 12));
 
+            char *wl_object = "unknown";
+            // char *error_code_desc = wl_display_error_code[error_code];
+            char *error_summary = "unknown";
+            if (error_object_id == wl_shm_id) {
+                wl_object = "wl_shm_id";
+                char *wl_error_desc[] = { 
+                    "invalid_format – buffer format is not known",
+                    "invalid_stride – invalid size or stride during pool or buffer creation",
+                    "invalid_fd – mmapping the file descriptor failed",
+                };
+                error_summary = wl_error_desc[error_code];
+            } else if (error_object_id == wl_shm_pool_id) {
+                wl_object = "wl_shm_pool";
+                char *wl_error_desc[] = { 
+                    "invalid_format – buffer format is not known",
+                    "invalid_stride – invalid size or stride during pool or buffer creation",
+                    "invalid_fd – mmapping the file descriptor failed",
+                };
+                error_summary = wl_error_desc[error_code];
+            }
+
             fprintf(
                 stderr, 
-                "Error – object_id: %d, error_code: %d, error_msg: %s \n", 
-                error_object_id, error_code, error_msg
+                "Error in %s: %s\n - object_id: %d, error_code: %d, error_msg: %s \n", 
+                wl_object, error_summary, error_object_id, error_code, error_msg
             );
             free(error_msg);
         }
