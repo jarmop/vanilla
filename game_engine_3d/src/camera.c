@@ -80,9 +80,9 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     }
 
     vec3 direction = {
-        cos(glm_rad(yaw) * cos(glm_rad(pitch))),
+        cos(glm_rad(yaw)) * cos(glm_rad(pitch)),
         sin(glm_rad(pitch)),
-        sin(glm_rad(yaw) * cos(glm_rad(pitch)))        
+        sin(glm_rad(yaw)) * cos(glm_rad(pitch))        
     };
     glm_normalize(direction);
     glm_vec3_copy(direction, cameraFront);
