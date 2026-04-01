@@ -46,12 +46,10 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 }
 
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
-    // fprintf(stderr, "coords: %d - %d\n", (int)xpos, (int)ypos);
-    // fprintf(stderr, "orient: %d - %d\n", (int)yaw, (int)pitch);
-
     if (!mouseRightPressed) {
         return;
     }
+    // fprintf(stderr, "x: %d, y: %d\n", (int)xpos, (int)ypos);
 
     if (firstMouse) {
         lastX = xpos;
@@ -89,8 +87,7 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
 }
 
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
-    fprintf(stderr, "%d\n", (int)fov);
-
+    // fprintf(stderr, "%d\n", (int)fov);
     (void)window; (void)xoffset;
     fov -= (float)yoffset;
     if (fov < 1.0f)
@@ -99,15 +96,21 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
         fov = 45.0f; 
 }
 
-void handle_input(GLFWwindow *window) {
-    if(glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    (void) scancode; (void) mods;
+    // fprintf(stderr, "%d - %d\n", key, action);
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
         glfwSetWindowShouldClose(window, true);
     }
+}
 
+void handle_input(GLFWwindow *window) {
     float currentFrame = glfwGetTime();
     deltaTime = currentFrame - lastFrame;
     lastFrame = currentFrame;
     const float cameraDelta = 2.5 * deltaTime;
+    
+    // WSAD
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
         glm_vec3_muladds(cameraFront, cameraDelta, cameraPos);
     }
@@ -115,10 +118,10 @@ void handle_input(GLFWwindow *window) {
         glm_vec3_mulsubs(cameraFront, cameraDelta, cameraPos);
     }
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-        vec3 crossProd;
-        glm_cross(cameraFront, cameraUp, crossProd);
-        glm_normalize(crossProd);
-        glm_vec3_mulsubs(crossProd, cameraDelta, cameraPos);
+        vec3 cameraRight;
+        glm_cross(cameraFront, cameraUp, cameraRight);
+        glm_normalize(cameraRight);
+        glm_vec3_mulsubs(cameraRight, cameraDelta, cameraPos);
     }
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
         vec3 crossProd;
@@ -126,6 +129,32 @@ void handle_input(GLFWwindow *window) {
         glm_normalize(crossProd);
         glm_vec3_muladds(crossProd, cameraDelta, cameraPos);
     }
+
+    // Elevation
+    if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
+        glm_vec3_muladds(cameraUp, cameraDelta, cameraPos);
+    }
+    if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS) {
+        glm_vec3_mulsubs(cameraUp, cameraDelta, cameraPos);
+    }
+
+    // Panning
+    // if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
+    //     vec3 cameraRight;
+    //     glm_cross(cameraFront, cameraUp, cameraRight);
+    //     glm_normalize(cameraRight);
+    //     glm_cross(cameraRight, cameraFront, cameraUp);
+    //     glm_normalize(cameraUp);
+    //     glm_vec3_muladds(cameraUp, cameraDelta, cameraPos);
+    // }
+    // if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS) {
+    //     vec3 cameraRight;
+    //     glm_cross(cameraFront, cameraUp, cameraRight);
+    //     glm_normalize(cameraRight);
+    //     glm_cross(cameraRight, cameraFront, cameraUp);
+    //     glm_normalize(cameraUp);
+    //     glm_vec3_mulsubs(cameraUp, cameraDelta, cameraPos);
+    // }
 }
 
 int main() {
@@ -145,7 +174,8 @@ int main() {
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetMouseButtonCallback(window, mouse_button_callback);
-    glfwSetScrollCallback(window, scroll_callback); 
+    glfwSetScrollCallback(window, scroll_callback);
+    glfwSetKeyCallback(window, key_callback);
 
     // Render elements at the front over the ones in the back
     glEnable(GL_DEPTH_TEST);
