@@ -1,7 +1,3 @@
-/* Copyright (c) 2025-2026, Sascha Willems
- * SPDX-License-Identifier: MIT
- */
-
 #define VOLK_IMPLEMENTATION
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
@@ -79,7 +75,6 @@ VkDescriptorSetLayout descriptorSetLayoutTex{VK_NULL_HANDLE};
 VkDescriptorSet descriptorSetTex{VK_NULL_HANDLE};
 Slang::ComPtr<slang::IGlobalSession> slangGlobalSession;
 glm::vec3 camPos{0.0f, 0.0f, -6.0f};
-glm::vec3 objectRotations[3]{};
 glm::ivec2 windowSize{};
 struct Vertex {
   glm::vec3 pos;
@@ -761,7 +756,6 @@ int main(int argc, char* argv[]) {
 #pragma endregion
 
   // Render loop
-  uint64_t lastTime = SDL_GetTicks();
   bool quit = false;
   while (!quit) {
     // Sync
@@ -775,8 +769,7 @@ int main(int argc, char* argv[]) {
     shaderData.view = glm::translate(glm::mat4(1.0f), camPos);
     for (auto i = 0; i < 3; i++) {
       auto instancePos = glm::vec3((float)(i - 1) * 3.0f, 0.0f, 0.0f);
-      shaderData.model[i] = glm::translate(glm::mat4(1.0f), instancePos) *
-                            glm::mat4_cast(glm::quat(objectRotations[i]));
+      shaderData.model[i] = glm::translate(glm::mat4(1.0f), instancePos);
     }
     memcpy(shaderDataBuffers[frameIndex].allocationInfo.pMappedData, &shaderData,
            sizeof(ShaderData));
@@ -898,29 +891,11 @@ int main(int argc, char* argv[]) {
     };
     chkSwapchain(vkQueuePresentKHR(queue, &presentInfo));
     // Event polling
-    float elapsedTime{(SDL_GetTicks() - lastTime) / 1000.0f};
-    lastTime = SDL_GetTicks();
     for (SDL_Event event; SDL_PollEvent(&event);) {
-      if (event.type == SDL_EVENT_QUIT) {
+      if (event.type == SDL_EVENT_QUIT ||
+          (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE)) {
         quit = true;
         break;
-      }
-      if (event.type == SDL_EVENT_MOUSE_MOTION) {
-        if (event.button.button == SDL_BUTTON_LEFT) {
-          objectRotations[shaderData.selected].x -= (float)event.motion.yrel * elapsedTime;
-          objectRotations[shaderData.selected].y += (float)event.motion.xrel * elapsedTime;
-        }
-      }
-      if (event.type == SDL_EVENT_MOUSE_WHEEL) {
-        camPos.z += (float)event.wheel.y * elapsedTime * 10.0f;
-      }
-      if (event.type == SDL_EVENT_KEY_DOWN) {
-        if (event.key.key == SDLK_PLUS || event.key.key == SDLK_KP_PLUS) {
-          shaderData.selected = (shaderData.selected < 2) ? shaderData.selected + 1 : 0;
-        }
-        if (event.key.key == SDLK_MINUS || event.key.key == SDLK_KP_MINUS) {
-          shaderData.selected = (shaderData.selected > 0) ? shaderData.selected - 1 : 2;
-        }
       }
       // Window resize
       if (event.type == SDL_EVENT_WINDOW_RESIZED) {
