@@ -25,11 +25,11 @@ struct camera {
     float speed;
     float fov;
 } camera = {
-    {0.0, 0.0, 3.0}, // pos
+    {3.0, 3.0, 3.0}, // pos
     {0.0, 0.0, -1.0}, // front
     {1.0, 0.0, 0.0},  // right
-    -90.0, // yaw
-    0.0, // pitch
+    -135.0, // yaw
+    -35.0, // pitch
     2.5, // speed
     MAX_FOV // fov
 };
@@ -60,6 +60,15 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
     } 
 }
 
+void updateCamera() {
+    camera.front[0] = cos(glm_rad(camera.yaw)) * cos(glm_rad(camera.pitch));
+    camera.front[1] = sin(glm_rad(camera.pitch));
+    camera.front[2] = sin(glm_rad(camera.yaw)) * cos(glm_rad(camera.pitch));
+    glm_normalize(camera.front);
+    glm_cross(camera.front, worldUp, camera.right);
+    glm_normalize(camera.right);
+}
+
 void mouse_callback(GLFWwindow* window, double mouseX, double mouseY) {
     (void) window;
     if (!mouseRightPressed) {
@@ -84,12 +93,7 @@ void mouse_callback(GLFWwindow* window, double mouseX, double mouseY) {
         camera.pitch = -89.0;
     }
 
-    camera.front[0] = cos(glm_rad(camera.yaw)) * cos(glm_rad(camera.pitch));
-    camera.front[1] = sin(glm_rad(camera.pitch));
-    camera.front[2] = sin(glm_rad(camera.yaw)) * cos(glm_rad(camera.pitch));
-    glm_normalize(camera.front);
-    glm_cross(camera.front, worldUp, camera.right);
-    glm_normalize(camera.right);
+    updateCamera();
 }
 
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
@@ -257,30 +261,23 @@ int main() {
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
-    unsigned int cubeCount = 10;
+    unsigned int cubeCount = 1;
     vec3 cubePositions[] = {
-        { 0.0f,  0.0f,  0.0f},
-        { 2.0f,  5.0f, -15.0f},
-        {-1.5f, -2.2f, -2.5f},
-        {-3.8f, -2.0f, -12.3f},
-        { 2.4f, -0.4f, -3.5f},
-        {-1.7f,  3.0f, -7.5f},
-        { 1.3f, -2.0f, -2.5f},
-        { 1.5f,  2.0f, -2.5f},
-        { 1.5f,  0.2f, -1.5f},
-        {-1.3f,  1.0f, -1.5f}
+        { 0.0,  0.0,  0.0},
     };
 
-    setupTextures();
-    GLuint shaderProgram = get_shader_program("src/texture_shader.vs", "src/texture_shader.fs");
+    // setupTextures();
+    // GLuint shaderProgram = get_shader_program("src/texture_shader.vs", "src/texture_shader.fs");
 
-    // GLuint shaderProgram = get_shader_program("src/color_shader.vs", "src/color_shader.fs");
+    GLuint shaderProgram = get_shader_program("src/color_shader.vs", "src/color_shader.fs");
 
     glUseProgram(shaderProgram);
 
+    updateCamera();
+
     // Render loop. Each iteration renders a new frame.
     while(!glfwWindowShouldClose(window)) {
-        glClearColor(0.53f, 0.18f, 0.08f, 1.0f);
+        // glClearColor(0.53f, 0.18f, 0.08f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         mat4 view;
