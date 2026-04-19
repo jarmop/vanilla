@@ -17,14 +17,10 @@ include_directories(SYSTEM $ENV{VULKAN_SDK}/include)
 
 add_subdirectory(vendored/SDL EXCLUDE_FROM_ALL)
 
-include_directories(vendored/slang/include)
-find_library(Slang_LIBRARY NAMES slang slang-compiler HINTS "vendored/slang/lib" REQUIRED)
-
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/")
 
-add_executable(${NAME} main.cpp assets/shader.slang)
+add_executable(${NAME} main.cpp)
 target_compile_definitions(${NAME} PRIVATE VK_NO_PROTOTYPES)
 set_target_properties(${NAME} PROPERTIES DEBUGGER_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(${NAME} PRIVATE cxx_std_20)
 target_link_libraries(${NAME} PRIVATE SDL3::SDL3)
-target_link_libraries(${NAME} PRIVATE ${Slang_LIBRARY})

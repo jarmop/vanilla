@@ -17,9 +17,6 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-#include "slang-com-ptr.h"
-#include "slang.h"
-
 constexpr uint32_t maxFramesInFlight = 1;
 uint32_t imageIndex = 0;
 uint32_t frameIndex = 0;
@@ -52,7 +49,6 @@ struct ShaderDataBuffer {
 };
 std::array<ShaderDataBuffer, maxFramesInFlight> shaderDataBuffers;
 VkDescriptorPool descriptorPool{VK_NULL_HANDLE};
-Slang::ComPtr<slang::IGlobalSession> slangGlobalSession;
 glm::ivec2 windowSize{};
 struct Vertex {
   glm::vec3 pos;
@@ -79,6 +75,33 @@ static inline void chk(bool result) {
     std::cerr << "Call returned an error\n";
     exit(result);
   }
+}
+
+static uint8_t* read_file(const char* path, size_t* out_size) {
+  FILE* f = fopen(path, "rb");
+  if (!f) {
+    perror(path);
+    exit(1);
+  }
+  fseek(f, 0, SEEK_END);
+  long sz = ftell(f);
+  fseek(f, 0, SEEK_SET);
+  if (sz <= 0) {
+    fprintf(stderr, "Empty file: %s\n", path);
+    exit(1);
+  }
+  uint8_t* buf = (uint8_t*)malloc((size_t)sz);
+  if (!buf) {
+    fprintf(stderr, "OOM\n");
+    exit(1);
+  }
+  if (fread(buf, 1, (size_t)sz, f) != (size_t)sz) {
+    fprintf(stderr, "Read failed\n");
+    exit(1);
+  }
+  fclose(f);
+  *out_size = (size_t)sz;
+  return buf;
 }
 
 int main(int argc, char* argv[]) {
@@ -328,40 +351,12 @@ int main(int argc, char* argv[]) {
 
 // Load the shader, compile it and pass it to the GPU
 #pragma region
-  slang::createGlobalSession(slangGlobalSession.writeRef());
-  auto slangTargets{
-      std::to_array<slang::TargetDesc>({{
-          .format{SLANG_SPIRV},
-          .profile{slangGlobalSession->findProfile("spirv_1_4")},
-      }}),
-  };
-
-  auto slangOptions{
-      std::to_array<slang::CompilerOptionEntry>({{
-          slang::CompilerOptionName::EmitSpirvDirectly,
-          {slang::CompilerOptionValueKind::Int, 1},
-      }}),
-  };
-  slang::SessionDesc slangSessionDesc{
-      .targets{slangTargets.data()},
-      .targetCount{SlangInt(slangTargets.size())},
-      // Use a layout compatible with the GLM library
-      .defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR,
-      .compilerOptionEntries{slangOptions.data()},
-      .compilerOptionEntryCount{uint32_t(slangOptions.size())},
-  };
-  Slang::ComPtr<slang::ISession> slangSession;
-  slangGlobalSession->createSession(slangSessionDesc, slangSession.writeRef());
-
-  Slang::ComPtr<slang::IModule> slangModule{
-      slangSession->loadModuleFromSource("triangle", "assets/shader.slang", nullptr, nullptr),
-  };
-  Slang::ComPtr<ISlangBlob> spirv;
-  slangModule->getTargetCode(0, spirv.writeRef());
-
+  const char* path = "assets/shader.spv";
+  size_t sz = 0;
+  uint8_t* bytes = read_file(path, &sz);
   VkShaderModuleCreateInfo shaderModuleCI{
-      .codeSize = spirv->getBufferSize(),
-      .pCode = (uint32_t*)spirv->getBufferPointer(),
+      .codeSize = sz,
+      .pCode = (const uint32_t*)bytes,
   };
   VkShaderModule shaderModule{};
   chk(vkCreateShaderModule(device, &shaderModuleCI, nullptr, &shaderModule));
