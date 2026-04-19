@@ -13,9 +13,6 @@
 #include <vma/vk_mem_alloc.h>
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <ktx.h>
-#include <ktxvulkan.h>
-
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -63,13 +60,6 @@ struct ShaderDataBuffer {
   VkDeviceAddress deviceAddress{};
 };
 std::array<ShaderDataBuffer, maxFramesInFlight> shaderDataBuffers;
-struct Texture {
-  VmaAllocation allocation{VK_NULL_HANDLE};
-  VkImage image{VK_NULL_HANDLE};
-  VkImageView view{VK_NULL_HANDLE};
-  VkSampler sampler{VK_NULL_HANDLE};
-};
-std::array<Texture, 3> textures{};
 VkDescriptorPool descriptorPool{VK_NULL_HANDLE};
 VkDescriptorSetLayout descriptorSetLayoutTex{VK_NULL_HANDLE};
 VkDescriptorSet descriptorSetTex{VK_NULL_HANDLE};
@@ -79,7 +69,6 @@ glm::ivec2 windowSize{};
 struct Vertex {
   glm::vec3 pos;
   glm::vec3 normal;
-  glm::vec2 uv;
 };
 
 static inline void chk(VkResult result) {
@@ -344,11 +333,6 @@ int main(int argc, char* argv[]) {
                 -attrib.normals[index.normal_index * 3 + 1],
                 attrib.normals[index.normal_index * 3 + 2],
             },
-        .uv =
-            {
-                attrib.texcoords[index.texcoord_index * 2],
-                1.0 - attrib.texcoords[index.texcoord_index * 2 + 1],
-            },
     };
     vertices.push_back(v);
     indices.push_back(indices.size());
@@ -414,215 +398,6 @@ int main(int argc, char* argv[]) {
       .commandBufferCount = maxFramesInFlight,
   };
   chk(vkAllocateCommandBuffers(device, &cbAllocCI, commandBuffers.data()));
-#pragma endregion
-
-// Load texture data to textureDescriptors
-#pragma region
-  std::vector<VkDescriptorImageInfo> textureDescriptors{};
-  for (auto i = 0; i < textures.size(); i++) {
-    // Load the image. Why load the same image on every loop?
-    ktxTexture* ktxTexture{nullptr};
-    std::string filename = "assets/suzanne" + std::to_string(i) + ".ktx";
-    ktxTexture_CreateFromNamedFile(filename.c_str(), KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT,
-                                   &ktxTexture);
-
-    // Create the image object and view
-    VkImageCreateInfo texImgCI{
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = ktxTexture_GetVkFormat(ktxTexture),
-        .extent = {.width = ktxTexture->baseWidth, .height = ktxTexture->baseHeight, .depth = 1},
-        .mipLevels = ktxTexture->numLevels,
-        .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
-    VmaAllocationCreateInfo texImageAllocCI{.usage = VMA_MEMORY_USAGE_AUTO};
-    chk(vmaCreateImage(allocator, &texImgCI, &texImageAllocCI, &textures[i].image,
-                       &textures[i].allocation, nullptr));
-    VkImageViewCreateInfo texViewCI{
-        .image = textures[i].image,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = texImgCI.format,
-        .subresourceRange =
-            {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .levelCount = ktxTexture->numLevels,
-                .layerCount = 1,
-            },
-    };
-    chk(vkCreateImageView(device, &texViewCI, nullptr, &textures[i].view));
-
-    // Create a temporary buffer for the image data so the data can be later transferred to the GPU
-    VkBuffer imgSrcBuffer{};
-    VmaAllocation imgSrcAllocation{};
-    VkBufferCreateInfo imgSrcBufferCI{
-        .size = (uint32_t)ktxTexture->dataSize,
-        .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-    };
-    VmaAllocationCreateInfo imgSrcAllocCI{
-        .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                 VMA_ALLOCATION_CREATE_MAPPED_BIT,
-        .usage = VMA_MEMORY_USAGE_AUTO};
-    VmaAllocationInfo imgSrcAllocInfo{};
-    chk(vmaCreateBuffer(allocator, &imgSrcBufferCI, &imgSrcAllocCI, &imgSrcBuffer,
-                        &imgSrcAllocation, &imgSrcAllocInfo));
-    memcpy(imgSrcAllocInfo.pMappedData, ktxTexture->pData, ktxTexture->dataSize);
-
-    // Create a buffer for the commands that will transfer the image data to the GPU
-    VkFenceCreateInfo fenceOneTimeCI{};
-    VkFence fenceOneTime{};
-    chk(vkCreateFence(device, &fenceOneTimeCI, nullptr, &fenceOneTime));
-    VkCommandBuffer cbOneTime{};
-    VkCommandBufferAllocateInfo cbOneTimeAI{.commandPool = commandPool, .commandBufferCount = 1};
-    chk(vkAllocateCommandBuffers(device, &cbOneTimeAI, &cbOneTime));
-
-// Record the commands to the buffer
-#pragma region
-    VkCommandBufferBeginInfo cbOneTimeBI{.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
-    chk(vkBeginCommandBuffer(cbOneTime, &cbOneTimeBI));
-
-    // Set image layout to one which allows transferrring data to it
-    // (VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
-    VkImageMemoryBarrier2 barrierTexImage{
-        .srcStageMask = VK_PIPELINE_STAGE_2_NONE,
-        .srcAccessMask = VK_ACCESS_2_NONE,
-        .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-        .dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        .image = textures[i].image,
-        .subresourceRange =
-            {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .levelCount = ktxTexture->numLevels,
-                .layerCount = 1,
-            },
-    };
-    VkDependencyInfo barrierTexInfo{
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &barrierTexImage,
-    };
-    vkCmdPipelineBarrier2(cbOneTime, &barrierTexInfo);
-    // transfer the data.
-    std::vector<VkBufferImageCopy> copyRegions{};
-    for (auto j = 0; j < ktxTexture->numLevels; j++) {
-      ktx_size_t mipOffset{0};
-      KTX_error_code ret = ktxTexture_GetImageOffset(ktxTexture, j, 0, 0, &mipOffset);
-      copyRegions.push_back({
-          .bufferOffset = mipOffset,
-          .imageSubresource{
-              .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = (uint32_t)j, .layerCount = 1},
-          .imageExtent{.width = ktxTexture->baseWidth >> j,
-                       .height = ktxTexture->baseHeight >> j,
-                       .depth = 1},
-      });
-    }
-    vkCmdCopyBufferToImage(cbOneTime, imgSrcBuffer, textures[i].image,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                           static_cast<uint32_t>(copyRegions.size()), copyRegions.data());
-
-    // Set image layout to one that allows reading data from it (VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL)
-    VkImageMemoryBarrier2 barrierTexRead{
-        .srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-        .dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        .newLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
-        .image = textures[i].image,
-        .subresourceRange =
-            {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .levelCount = ktxTexture->numLevels,
-                .layerCount = 1,
-            },
-    };
-    barrierTexInfo.pImageMemoryBarriers = &barrierTexRead;
-    vkCmdPipelineBarrier2(cbOneTime, &barrierTexInfo);
-
-    chk(vkEndCommandBuffer(cbOneTime));
-
-    // Submit the commad buffer
-    VkSubmitInfo oneTimeSI{.commandBufferCount = 1, .pCommandBuffers = &cbOneTime};
-    chk(vkQueueSubmit(queue, 1, &oneTimeSI, fenceOneTime));
-    chk(vkWaitForFences(device, 1, &fenceOneTime, VK_TRUE, UINT64_MAX));
-    vkDestroyFence(device, fenceOneTime, nullptr);
-    vmaDestroyBuffer(allocator, imgSrcBuffer, imgSrcAllocation);
-#pragma endregion
-
-    // Create a sampler for the shader
-    VkSamplerCreateInfo samplerCI{
-        .magFilter = VK_FILTER_LINEAR,
-        .minFilter = VK_FILTER_LINEAR,
-        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-        .anisotropyEnable = VK_TRUE,
-        .maxAnisotropy = 8.0f,
-        .maxLod = (float)ktxTexture->numLevels,
-    };
-    chk(vkCreateSampler(device, &samplerCI, nullptr, &textures[i].sampler));
-
-    ktxTexture_Destroy(ktxTexture);
-
-    textureDescriptors.push_back({
-        .sampler = textures[i].sampler,
-        .imageView = textures[i].view,
-        .imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
-    });
-  }
-#pragma endregion
-
-// Use descriptors to pass information to the GPU about how the images look like and how they are
-// accessed
-#pragma region
-  // Create Descriptor set layout. One sampler per image.
-  VkDescriptorBindingFlags descVariableFlag{VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT};
-  VkDescriptorSetLayoutBindingFlagsCreateInfo descBindingFlags{
-      .bindingCount = 1,
-      .pBindingFlags = &descVariableFlag,
-  };
-  VkDescriptorSetLayoutBinding descLayoutBindingTex{
-      .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-      .descriptorCount = static_cast<uint32_t>(textures.size()),
-      .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-  };
-  VkDescriptorSetLayoutCreateInfo descLayoutTexCI{
-      .pNext = &descBindingFlags,
-      .bindingCount = 1,
-      .pBindings = &descLayoutBindingTex,
-  };
-  chk(vkCreateDescriptorSetLayout(device, &descLayoutTexCI, nullptr, &descriptorSetLayoutTex));
-
-  // Create descriptor pool
-  VkDescriptorPoolSize poolSize{
-      .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-      .descriptorCount = static_cast<uint32_t>(textures.size()),
-  };
-  VkDescriptorPoolCreateInfo descPoolCI{.maxSets = 1, .poolSizeCount = 1, .pPoolSizes = &poolSize};
-  chk(vkCreateDescriptorPool(device, &descPoolCI, nullptr, &descriptorPool));
-
-  // Allocate the descriptor set. Only one is needed because it combines images and samplers
-  uint32_t variableDescCount{static_cast<uint32_t>(textures.size())};
-  VkDescriptorSetVariableDescriptorCountAllocateInfo variableDescCountAI{
-      .descriptorSetCount = 1,
-      .pDescriptorCounts = &variableDescCount,
-  };
-  VkDescriptorSetAllocateInfo texDescSetAlloc{
-      .pNext = &variableDescCountAI,
-      .descriptorPool = descriptorPool,
-      .descriptorSetCount = 1,
-      .pSetLayouts = &descriptorSetLayoutTex,
-  };
-  chk(vkAllocateDescriptorSets(device, &texDescSetAlloc, &descriptorSetTex));
-
-  VkWriteDescriptorSet writeDescSet{
-      .dstSet = descriptorSetTex,
-      .dstBinding = 0,
-      .descriptorCount = static_cast<uint32_t>(textureDescriptors.size()),
-      .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-      .pImageInfo = textureDescriptors.data(),
-  };
-  vkUpdateDescriptorSets(device, 1, &writeDescSet, 0, nullptr);
 #pragma endregion
 
 // Load the shader, compile it and pass it to the GPU
@@ -698,11 +473,6 @@ int main(int argc, char* argv[]) {
        .binding = 0,
        .format = VK_FORMAT_R32G32B32_SFLOAT,
        .offset = offsetof(Vertex, normal)},
-      // UV
-      {.location = 2,
-       .binding = 0,
-       .format = VK_FORMAT_R32G32_SFLOAT,
-       .offset = offsetof(Vertex, uv)},
   };
   VkPipelineVertexInputStateCreateInfo vertexInputState{
       .vertexBindingDescriptionCount = 1,
@@ -968,11 +738,6 @@ int main(int argc, char* argv[]) {
     vkDestroyImageView(device, swapchainImageViews[i], nullptr);
   }
   vmaDestroyBuffer(allocator, vBuffer, vBufferAllocation);
-  for (auto i = 0; i < textures.size(); i++) {
-    vkDestroyImageView(device, textures[i].view, nullptr);
-    vkDestroySampler(device, textures[i].sampler, nullptr);
-    vmaDestroyImage(allocator, textures[i].image, textures[i].allocation);
-  }
   vkDestroyDescriptorSetLayout(device, descriptorSetLayoutTex, nullptr);
   vkDestroyDescriptorPool(device, descriptorPool, nullptr);
   vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
