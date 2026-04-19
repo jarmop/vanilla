@@ -19,7 +19,6 @@
 
 #include "slang-com-ptr.h"
 #include "slang.h"
-#define TINYOBJLOADER_IMPLEMENTATION
 
 constexpr uint32_t maxFramesInFlight = 1;
 uint32_t imageIndex = 0;
@@ -56,8 +55,6 @@ struct ShaderDataBuffer {
 };
 std::array<ShaderDataBuffer, maxFramesInFlight> shaderDataBuffers;
 VkDescriptorPool descriptorPool{VK_NULL_HANDLE};
-VkDescriptorSetLayout descriptorSetLayoutTex{VK_NULL_HANDLE};
-VkDescriptorSet descriptorSetTex{VK_NULL_HANDLE};
 Slang::ComPtr<slang::IGlobalSession> slangGlobalSession;
 glm::vec3 camPos{0.0f, 0.0f, -6.0f};
 glm::ivec2 windowSize{};
@@ -416,19 +413,6 @@ int main(int argc, char* argv[]) {
 
 // PIPELINE
 #pragma region
-  // Pipeline layout
-  VkPushConstantRange pushConstantRange{
-      .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-      .size = sizeof(VkDeviceAddress),
-  };
-  VkPipelineLayoutCreateInfo pipelineLayoutCI{
-      .setLayoutCount = 1,
-      .pSetLayouts = &descriptorSetLayoutTex,
-      .pushConstantRangeCount = 1,
-      .pPushConstantRanges = &pushConstantRange,
-  };
-  chk(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayout));
-
   std::vector<VkPipelineShaderStageCreateInfo> shaderStages{
       {.stage = VK_SHADER_STAGE_VERTEX_BIT, .module = shaderModule, .pName = "main"},
       {.stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = shaderModule, .pName = "main"},
@@ -576,8 +560,6 @@ int main(int argc, char* argv[]) {
                              .height = static_cast<uint32_t>(windowSize.y)}};
     vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     vkCmdSetScissor(cb, 0, 1, &scissor);
-    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
-                            &descriptorSetTex, 0, nullptr);
     VkDeviceSize vOffset{0};
     vkCmdBindVertexBuffers(cb, 0, 1, &vBuffer, &vOffset);
     vkCmdBindIndexBuffer(cb, vBuffer, vBufSize, VK_INDEX_TYPE_UINT16);
@@ -699,7 +681,6 @@ int main(int argc, char* argv[]) {
     vkDestroyImageView(device, swapchainImageViews[i], nullptr);
   }
   vmaDestroyBuffer(allocator, vBuffer, vBufferAllocation);
-  vkDestroyDescriptorSetLayout(device, descriptorSetLayoutTex, nullptr);
   vkDestroyDescriptorPool(device, descriptorPool, nullptr);
   vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
   vkDestroyPipeline(device, pipeline, nullptr);
