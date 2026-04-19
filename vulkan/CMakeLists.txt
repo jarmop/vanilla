@@ -13,7 +13,6 @@ endif()
 # Volk, VMA, glm are taken from the SDK
 include_directories(SYSTEM $ENV{VULKAN_SDK}/include)
 # These are not part of the SDK
-include_directories(external/tinyobj)
 include_directories(vendored/slang/include)
 
 find_package (Vulkan REQUIRED)

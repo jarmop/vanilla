@@ -20,11 +20,10 @@
 #include "slang-com-ptr.h"
 #include "slang.h"
 #define TINYOBJLOADER_IMPLEMENTATION
-#include <tiny_obj_loader.h>
 
-constexpr uint32_t maxFramesInFlight{2};
-uint32_t imageIndex{0};
-uint32_t frameIndex{0};
+constexpr uint32_t maxFramesInFlight = 1;
+uint32_t imageIndex = 0;
+uint32_t frameIndex = 0;
 VkInstance instance{VK_NULL_HANDLE};
 VkDevice device{VK_NULL_HANDLE};
 VkQueue queue{VK_NULL_HANDLE};
@@ -49,8 +48,8 @@ VkBuffer vBuffer{VK_NULL_HANDLE};
 struct ShaderData {
   glm::mat4 projection;
   glm::mat4 view;
-  glm::mat4 model[3];
-  uint32_t selected{1};
+  glm::mat4 model;
+  uint32_t selected = 1;
 } shaderData{};
 struct ShaderDataBuffer {
   VmaAllocation allocation{VK_NULL_HANDLE};
@@ -304,31 +303,16 @@ int main(int argc, char* argv[]) {
   chk(vkCreateImageView(device, &depthViewCI, nullptr, &depthImageView));
 #pragma endregion
 
-// Mesh data
-#pragma region
-  tinyobj::attrib_t attrib;
-  std::vector<tinyobj::shape_t> shapes;
-  std::vector<tinyobj::material_t> materials;
-  chk(tinyobj::LoadObj(&attrib, &shapes, &materials, nullptr, nullptr, "assets/suzanne.obj"));
-  const VkDeviceSize indexCount{shapes[0].mesh.indices.size()};
-  std::vector<Vertex> vertices{};
-  std::vector<uint16_t> indices{};
-#pragma endregion
-
 // Load vertex and index data
 #pragma region
-  for (auto& index : shapes[0].mesh.indices) {
-    Vertex v{
-        .pos =
-            {
-                attrib.vertices[index.vertex_index * 3],
-                -attrib.vertices[index.vertex_index * 3 + 1],
-                attrib.vertices[index.vertex_index * 3 + 2],
-            },
-    };
-    vertices.push_back(v);
-    indices.push_back(indices.size());
-  }
+  std::vector<Vertex> vertices{
+      Vertex{.pos{0.0, 0.0, 0.0}},
+      Vertex{.pos{0.5, 0.0, 0.0}},
+      Vertex{.pos{0.0, 0.5, 0.0}},
+  };
+  const VkDeviceSize indexCount = vertices.size();
+  std::vector<uint16_t> indices{0, 1, 2};
+
   VkDeviceSize vBufSize{sizeof(Vertex) * vertices.size()};
   VkDeviceSize iBufSize{sizeof(uint16_t) * indices.size()};
   VkBufferCreateInfo bufferCI{
@@ -524,10 +508,7 @@ int main(int argc, char* argv[]) {
     shaderData.projection = glm::perspective(
         glm::radians(45.0f), (float)windowSize.x / (float)windowSize.y, 0.1f, 32.0f);
     shaderData.view = glm::translate(glm::mat4(1.0f), camPos);
-    for (auto i = 0; i < 3; i++) {
-      auto instancePos = glm::vec3((float)(i - 1) * 3.0f, 0.0f, 0.0f);
-      shaderData.model[i] = glm::translate(glm::mat4(1.0f), instancePos);
-    }
+    shaderData.model = glm::mat4(1.0f);
     memcpy(shaderDataBuffers[frameIndex].allocationInfo.pMappedData, &shaderData,
            sizeof(ShaderData));
     // Build command buffer
@@ -638,7 +619,6 @@ int main(int argc, char* argv[]) {
         .pSignalSemaphores = &renderSemaphores[imageIndex],
     };
     chk(vkQueueSubmit(queue, 1, &submitInfo, fences[frameIndex]));
-    frameIndex = (frameIndex + 1) % maxFramesInFlight;
     VkPresentInfoKHR presentInfo{
         .waitSemaphoreCount = 1,
         .pWaitSemaphores = &renderSemaphores[imageIndex],
