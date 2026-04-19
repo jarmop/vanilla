@@ -32,10 +32,7 @@ VkSwapchainKHR swapchain{VK_NULL_HANDLE};
 VkCommandPool commandPool{VK_NULL_HANDLE};
 VkPipeline pipeline{VK_NULL_HANDLE};
 VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
-VkImage depthImage;
 VmaAllocator allocator{VK_NULL_HANDLE};
-VmaAllocation depthImageAllocation;
-VkImageView depthImageView;
 std::vector<VkImage> swapchainImages;
 std::vector<VkImageView> swapchainImageViews;
 std::array<VkCommandBuffer, maxFramesInFlight> commandBuffers;
@@ -56,7 +53,6 @@ struct ShaderDataBuffer {
 std::array<ShaderDataBuffer, maxFramesInFlight> shaderDataBuffers;
 VkDescriptorPool descriptorPool{VK_NULL_HANDLE};
 Slang::ComPtr<slang::IGlobalSession> slangGlobalSession;
-glm::vec3 camPos{0.0f, 0.0f, -6.0f};
 glm::ivec2 windowSize{};
 struct Vertex {
   glm::vec3 pos;
@@ -257,46 +253,6 @@ int main(int argc, char* argv[]) {
   }
 #pragma endregion
 
-// Depth attachment for depth testing
-#pragma region
-  std::vector<VkFormat> depthFormatList{VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT};
-  VkFormat depthFormat{VK_FORMAT_UNDEFINED};
-  for (VkFormat& format : depthFormatList) {
-    VkFormatProperties2 formatProperties;
-    vkGetPhysicalDeviceFormatProperties2(devices[deviceIndex], format, &formatProperties);
-    if (formatProperties.formatProperties.optimalTilingFeatures &
-        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
-      depthFormat = format;
-      break;
-    }
-  }
-  assert(depthFormat != VK_FORMAT_UNDEFINED);
-  VkImageCreateInfo depthImageCI{
-      .imageType = VK_IMAGE_TYPE_2D,
-      .format = depthFormat,
-      .extent{.width = (uint32_t)windowSize.x, .height = (uint32_t)windowSize.y, .depth = 1},
-      .mipLevels = 1,
-      .arrayLayers = 1,
-      .samples = VK_SAMPLE_COUNT_1_BIT,
-      .tiling = VK_IMAGE_TILING_OPTIMAL,
-      .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-  };
-  VmaAllocationCreateInfo allocCI{
-      .flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
-      .usage = VMA_MEMORY_USAGE_AUTO,
-  };
-  chk(vmaCreateImage(allocator, &depthImageCI, &allocCI, &depthImage, &depthImageAllocation,
-                     nullptr));
-  VkImageViewCreateInfo depthViewCI{
-      .image = depthImage,
-      .viewType = VK_IMAGE_VIEW_TYPE_2D,
-      .format = depthFormat,
-      .subresourceRange{.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT, .levelCount = 1, .layerCount = 1},
-  };
-  chk(vkCreateImageView(device, &depthViewCI, nullptr, &depthImageView));
-#pragma endregion
-
 // Load vertex and index data
 #pragma region
   std::vector<Vertex> vertices{
@@ -445,10 +401,6 @@ int main(int argc, char* argv[]) {
   VkPipelineMultisampleStateCreateInfo multisampleState{
       .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
   };
-  VkPipelineDepthStencilStateCreateInfo depthStencilState{
-      .depthTestEnable = VK_TRUE,
-      .depthWriteEnable = VK_TRUE,
-      .depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL};
   VkPipelineColorBlendAttachmentState blendAttachment{.colorWriteMask = 0xF};
   VkPipelineColorBlendStateCreateInfo colorBlendState{
       .attachmentCount = 1,
@@ -458,7 +410,6 @@ int main(int argc, char* argv[]) {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
       .colorAttachmentCount = 1,
       .pColorAttachmentFormats = &imageFormat,
-      .depthAttachmentFormat = depthFormat,
   };
   VkGraphicsPipelineCreateInfo pipelineCI{
       .pNext = &renderingCI,
@@ -469,7 +420,6 @@ int main(int argc, char* argv[]) {
       .pViewportState = &viewportState,
       .pRasterizationState = &rasterizationState,
       .pMultisampleState = &multisampleState,
-      .pDepthStencilState = &depthStencilState,
       .pColorBlendState = &colorBlendState,
       .pDynamicState = &dynamicState,
       .layout = pipelineLayout,
@@ -496,39 +446,6 @@ int main(int argc, char* argv[]) {
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     };
     chk(vkBeginCommandBuffer(cb, &cbBI));
-    std::array<VkImageMemoryBarrier2, 2> outputBarriers{
-        VkImageMemoryBarrier2{
-            .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            .srcAccessMask = 0,
-            .dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            .dstAccessMask =
-                VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .newLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-            .image = swapchainImages[imageIndex],
-            .subresourceRange{
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1},
-        },
-        VkImageMemoryBarrier2{
-            .srcStageMask = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-            .srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-            .dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
-            .dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .newLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-            .image = depthImage,
-            .subresourceRange{
-                .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
-                .levelCount = 1,
-                .layerCount = 1,
-            },
-        },
-    };
-    VkDependencyInfo barrierDependencyInfo{
-        .imageMemoryBarrierCount = 2,
-        .pImageMemoryBarriers = outputBarriers.data(),
-    };
-    vkCmdPipelineBarrier2(cb, &barrierDependencyInfo);
     VkRenderingAttachmentInfo colorAttachmentInfo{
         .imageView = swapchainImageViews[imageIndex],
         .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
@@ -536,25 +453,18 @@ int main(int argc, char* argv[]) {
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
         .clearValue{.color{0.0f, 0.0f, 0.0f, 1.0f}},
     };
-    VkRenderingAttachmentInfo depthAttachmentInfo{
-        .imageView = depthImageView,
-        .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        .clearValue = {.depthStencil = {1.0f, 0}},
-    };
     VkRenderingInfo renderingInfo{
         .renderArea{.extent{.width = static_cast<uint32_t>(windowSize.x),
                             .height = static_cast<uint32_t>(windowSize.y)}},
         .layerCount = 1,
         .colorAttachmentCount = 1,
         .pColorAttachments = &colorAttachmentInfo,
-        .pDepthAttachment = &depthAttachmentInfo};
+    };
     vkCmdBeginRendering(cb, &renderingInfo);
-    VkViewport vp{.width = static_cast<float>(windowSize.x),
-                  .height = static_cast<float>(windowSize.y),
-                  .minDepth = 0.0f,
-                  .maxDepth = 1.0f};
+    VkViewport vp{
+        .width = static_cast<float>(windowSize.x),
+        .height = static_cast<float>(windowSize.y),
+    };
     vkCmdSetViewport(cb, 0, 1, &vp);
     VkRect2D scissor{.extent{.width = static_cast<uint32_t>(windowSize.x),
                              .height = static_cast<uint32_t>(windowSize.y)}};
@@ -643,24 +553,12 @@ int main(int argc, char* argv[]) {
         chk(vkCreateImageView(device, &viewCI, nullptr, &swapchainImageViews[i]));
       }
       vkDestroySwapchainKHR(device, swapchainCI.oldSwapchain, nullptr);
-      vmaDestroyImage(allocator, depthImage, depthImageAllocation);
-      vkDestroyImageView(device, depthImageView, nullptr);
-      depthImageCI.extent = {.width = static_cast<uint32_t>(windowSize.x),
-                             .height = static_cast<uint32_t>(windowSize.y),
-                             .depth = 1};
       VmaAllocationCreateInfo allocCI{.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
                                       .usage = VMA_MEMORY_USAGE_AUTO};
-      chk(vmaCreateImage(allocator, &depthImageCI, &allocCI, &depthImage, &depthImageAllocation,
-                         nullptr));
       VkImageViewCreateInfo viewCI{
-          .image = depthImage,
           .viewType = VK_IMAGE_VIEW_TYPE_2D,
-          .format = depthFormat,
-          .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
-                               .levelCount = 1,
-                               .layerCount = 1},
+          .subresourceRange = {.levelCount = 1, .layerCount = 1},
       };
-      chk(vkCreateImageView(device, &viewCI, nullptr, &depthImageView));
     }
   }
 
@@ -675,8 +573,6 @@ int main(int argc, char* argv[]) {
   for (auto i = 0; i < renderSemaphores.size(); i++) {
     vkDestroySemaphore(device, renderSemaphores[i], nullptr);
   }
-  vmaDestroyImage(allocator, depthImage, depthImageAllocation);
-  vkDestroyImageView(device, depthImageView, nullptr);
   for (auto i = 0; i < swapchainImageViews.size(); i++) {
     vkDestroyImageView(device, swapchainImageViews[i], nullptr);
   }
