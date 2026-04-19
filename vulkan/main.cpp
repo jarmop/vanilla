@@ -46,10 +46,7 @@ std::vector<VkSemaphore> renderSemaphores;
 VmaAllocation vBufferAllocation{VK_NULL_HANDLE};
 VkBuffer vBuffer{VK_NULL_HANDLE};
 struct ShaderData {
-  glm::mat4 projection;
-  glm::mat4 view;
   glm::mat4 model;
-  uint32_t selected = 1;
 } shaderData{};
 struct ShaderDataBuffer {
   VmaAllocation allocation{VK_NULL_HANDLE};
@@ -505,9 +502,6 @@ int main(int argc, char* argv[]) {
     chkSwapchain(vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, presentSemaphores[frameIndex],
                                        VK_NULL_HANDLE, &imageIndex));
     // Update shader data
-    shaderData.projection = glm::perspective(
-        glm::radians(45.0f), (float)windowSize.x / (float)windowSize.y, 0.1f, 32.0f);
-    shaderData.view = glm::translate(glm::mat4(1.0f), camPos);
     shaderData.model = glm::mat4(1.0f);
     memcpy(shaderDataBuffers[frameIndex].allocationInfo.pMappedData, &shaderData,
            sizeof(ShaderData));

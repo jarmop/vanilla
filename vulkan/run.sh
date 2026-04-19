@@ -1,6 +1,6 @@
 #!/bin/bash
 
-rm build/bin/HowToVulkan 
+rm -f build/bin/HowToVulkan 
 
 time cmake -B build
 time cmake --build build

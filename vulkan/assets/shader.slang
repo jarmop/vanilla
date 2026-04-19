@@ -3,10 +3,7 @@ struct VSInput {
 };
 
 struct ShaderData {
-    float4x4 projection;
-    float4x4 view;
     float4x4 model;
-    uint32_t selected;
 };
 
 struct VSOutput {
@@ -17,8 +14,7 @@ struct VSOutput {
 VSOutput main(VSInput input, uniform ShaderData *shaderData, uint instanceIndex : SV_VulkanInstanceID) {
     VSOutput output;
     float4x4 modelMat = shaderData->model;
-    output.Pos = mul(shaderData->projection, mul(shaderData->view, mul(modelMat, float4(input.Pos.xyz, 1.0))));
-    float4 fragPos = mul(mul(shaderData->view, modelMat), float4(input.Pos.xyz, 1.0));
+    output.Pos = mul(modelMat, float4(input.Pos.xyz, 1.0));
     return output;
 }
 
