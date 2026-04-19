@@ -50,7 +50,6 @@ struct ShaderData {
   glm::mat4 projection;
   glm::mat4 view;
   glm::mat4 model[3];
-  glm::vec4 lightPos{0.0f, -10.0f, 10.0f, 0.0f};
   uint32_t selected{1};
 } shaderData{};
 struct ShaderDataBuffer {
@@ -68,7 +67,6 @@ glm::vec3 camPos{0.0f, 0.0f, -6.0f};
 glm::ivec2 windowSize{};
 struct Vertex {
   glm::vec3 pos;
-  glm::vec3 normal;
 };
 
 static inline void chk(VkResult result) {
@@ -327,12 +325,6 @@ int main(int argc, char* argv[]) {
                 -attrib.vertices[index.vertex_index * 3 + 1],
                 attrib.vertices[index.vertex_index * 3 + 2],
             },
-        .normal =
-            {
-                attrib.normals[index.normal_index * 3],
-                -attrib.normals[index.normal_index * 3 + 1],
-                attrib.normals[index.normal_index * 3 + 2],
-            },
     };
     vertices.push_back(v);
     indices.push_back(indices.size());
@@ -468,11 +460,6 @@ int main(int argc, char* argv[]) {
   std::vector<VkVertexInputAttributeDescription> vertexAttributes{
       // Position
       {.location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT},
-      // Normal
-      {.location = 1,
-       .binding = 0,
-       .format = VK_FORMAT_R32G32B32_SFLOAT,
-       .offset = offsetof(Vertex, normal)},
   };
   VkPipelineVertexInputStateCreateInfo vertexInputState{
       .vertexBindingDescriptionCount = 1,
