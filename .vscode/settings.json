@@ -11,5 +11,9 @@
     "rust-analyzer.inlayHints.expressionAdjustmentHints.disableReborrows": false,
     "rust-analyzer.inlayHints.parameterHints.enable": false,
     "javascript.autoClosingTags": false,
-    "deno.enable": true
+    "deno.enable": true,
+    "editor.formatOnSave": true,
+    "[c]": {        
+        "editor.formatOnSave": true,
+    },
 }

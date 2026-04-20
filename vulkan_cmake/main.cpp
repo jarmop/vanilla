@@ -121,9 +121,9 @@ int main(int argc, char* argv[]) {
   uint32_t instanceExtensionsCount{0};
   char const* const* instanceExtensions{SDL_Vulkan_GetInstanceExtensions(&instanceExtensionsCount)};
   VkInstanceCreateInfo instanceCI{
-      .pApplicationInfo = &appInfo,
-      .enabledExtensionCount = instanceExtensionsCount,
-      .ppEnabledExtensionNames = instanceExtensions,
+    .pApplicationInfo = &appInfo,
+    .enabledExtensionCount = instanceExtensionsCount,
+    .ppEnabledExtensionNames = instanceExtensions,
   };
   chk(vkCreateInstance(&instanceCI, nullptr, &instance));
   volkLoadInstance(instance);
@@ -175,31 +175,31 @@ int main(int argc, char* argv[]) {
 #pragma region
   const float qfpriorities{1.0f};
   VkDeviceQueueCreateInfo queueCI{
-      .queueFamilyIndex = queueFamily,
-      .queueCount = 1,
-      .pQueuePriorities = &qfpriorities,
+    .queueFamilyIndex = queueFamily,
+    .queueCount = 1,
+    .pQueuePriorities = &qfpriorities,
   };
   VkPhysicalDeviceVulkan13Features enabledVk13Features{
-      .synchronization2 = true,
-      .dynamicRendering = true,
+    .synchronization2 = true,
+    .dynamicRendering = true,
   };
   VkPhysicalDeviceVulkan12Features enabledVk12Features{
-      .pNext = &enabledVk13Features,
-      .descriptorIndexing = true,
-      .shaderSampledImageArrayNonUniformIndexing = true,
-      .descriptorBindingVariableDescriptorCount = true,
-      .runtimeDescriptorArray = true,
-      .bufferDeviceAddress = true,
+    .pNext = &enabledVk13Features,
+    .descriptorIndexing = true,
+    .shaderSampledImageArrayNonUniformIndexing = true,
+    .descriptorBindingVariableDescriptorCount = true,
+    .runtimeDescriptorArray = true,
+    .bufferDeviceAddress = true,
   };
   VkPhysicalDeviceFeatures enabledVk10Features{.samplerAnisotropy = VK_TRUE};
   const std::vector<const char*> deviceExtensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
   VkDeviceCreateInfo deviceCI{
-      .pNext = &enabledVk12Features,
-      .queueCreateInfoCount = 1,
-      .pQueueCreateInfos = &queueCI,
-      .enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),
-      .ppEnabledExtensionNames = deviceExtensions.data(),
-      .pEnabledFeatures = &enabledVk10Features,
+    .pNext = &enabledVk12Features,
+    .queueCreateInfoCount = 1,
+    .pQueueCreateInfos = &queueCI,
+    .enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),
+    .ppEnabledExtensionNames = deviceExtensions.data(),
+    .pEnabledFeatures = &enabledVk10Features,
   };
   chk(vkCreateDevice(devices[deviceIndex], &deviceCI, nullptr, &device));
   vkGetDeviceQueue(device, queueFamily, 0, &queue);
@@ -208,16 +208,16 @@ int main(int argc, char* argv[]) {
 // Set up the Vulkan memory allocator
 #pragma region
   VmaVulkanFunctions vkFunctions{
-      .vkGetInstanceProcAddr = vkGetInstanceProcAddr,
-      .vkGetDeviceProcAddr = vkGetDeviceProcAddr,
-      .vkCreateImage = vkCreateImage,
+    .vkGetInstanceProcAddr = vkGetInstanceProcAddr,
+    .vkGetDeviceProcAddr = vkGetDeviceProcAddr,
+    .vkCreateImage = vkCreateImage,
   };
   VmaAllocatorCreateInfo allocatorCI{
-      .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
-      .physicalDevice = devices[deviceIndex],
-      .device = device,
-      .pVulkanFunctions = &vkFunctions,
-      .instance = instance,
+    .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
+    .physicalDevice = devices[deviceIndex],
+    .device = device,
+    .pVulkanFunctions = &vkFunctions,
+    .instance = instance,
   };
   chk(vmaCreateAllocator(&allocatorCI, &allocator));
 #pragma endregion
@@ -225,7 +225,7 @@ int main(int argc, char* argv[]) {
 // Window and surface
 #pragma region
   SDL_Window* window =
-      SDL_CreateWindow("How to Vulkan", 1280u, 720u, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+    SDL_CreateWindow("How to Vulkan", 1280u, 720u, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
   assert(window);
   chk(SDL_Vulkan_CreateSurface(window, instance, nullptr, &surface));
   chk(SDL_GetWindowSize(window, &windowSize.x, &windowSize.y));
@@ -235,8 +235,8 @@ int main(int argc, char* argv[]) {
   // Special case for Wayland who expects to get the extent (width and height) from the window
   if (surfaceCaps.currentExtent.width == 0xFFFFFFFF) {
     swapchainExtent = {
-        .width = static_cast<uint32_t>(windowSize.x),
-        .height = static_cast<uint32_t>(windowSize.y),
+      .width = static_cast<uint32_t>(windowSize.x),
+      .height = static_cast<uint32_t>(windowSize.y),
     };
   }
 #pragma endregion
@@ -245,16 +245,16 @@ int main(int argc, char* argv[]) {
 #pragma region
   const VkFormat imageFormat{VK_FORMAT_B8G8R8A8_SRGB};
   VkSwapchainCreateInfoKHR swapchainCI{
-      .surface = surface,
-      .minImageCount = surfaceCaps.minImageCount,
-      .imageFormat = imageFormat,
-      .imageColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR,
-      .imageExtent{.width = swapchainExtent.width, .height = swapchainExtent.height},
-      .imageArrayLayers = 1,
-      .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-      .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
-      .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-      .presentMode = VK_PRESENT_MODE_FIFO_KHR};
+    .surface = surface,
+    .minImageCount = surfaceCaps.minImageCount,
+    .imageFormat = imageFormat,
+    .imageColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR,
+    .imageExtent{.width = swapchainExtent.width, .height = swapchainExtent.height},
+    .imageArrayLayers = 1,
+    .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+    .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
+    .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+    .presentMode = VK_PRESENT_MODE_FIFO_KHR};
   chk(vkCreateSwapchainKHR(device, &swapchainCI, nullptr, &swapchain));
   uint32_t imageCount{0};
   chk(vkGetSwapchainImagesKHR(device, swapchain, &imageCount, nullptr));
@@ -263,14 +263,14 @@ int main(int argc, char* argv[]) {
   swapchainImageViews.resize(imageCount);
   for (int i = 0; i < imageCount; i++) {
     VkImageViewCreateInfo viewCI{
-        .image = swapchainImages[i],
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = imageFormat,
-        .subresourceRange{
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .levelCount = 1,
-            .layerCount = 1,
-        },
+      .image = swapchainImages[i],
+      .viewType = VK_IMAGE_VIEW_TYPE_2D,
+      .format = imageFormat,
+      .subresourceRange{
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .levelCount = 1,
+        .layerCount = 1,
+      },
     };
     chk(vkCreateImageView(device, &viewCI, nullptr, &swapchainImageViews[i]));
   }
@@ -279,9 +279,9 @@ int main(int argc, char* argv[]) {
 // Load vertex and index data
 #pragma region
   std::vector<Vertex> vertices{
-      Vertex{.pos{0.0, 0.0, 0.0}},
-      Vertex{.pos{0.5, 0.0, 0.0}},
-      Vertex{.pos{0.0, 0.5, 0.0}},
+    Vertex{.pos{0.0, 0.0, 0.0}},
+    Vertex{.pos{0.5, 0.0, 0.0}},
+    Vertex{.pos{0.0, 0.5, 0.0}},
   };
   const VkDeviceSize indexCount = vertices.size();
   std::vector<uint16_t> indices{0, 1, 2};
@@ -289,13 +289,13 @@ int main(int argc, char* argv[]) {
   VkDeviceSize vBufSize{sizeof(Vertex) * vertices.size()};
   VkDeviceSize iBufSize{sizeof(uint16_t) * indices.size()};
   VkBufferCreateInfo bufferCI{
-      .size = vBufSize + iBufSize,
-      .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT};
+    .size = vBufSize + iBufSize,
+    .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT};
   VmaAllocationCreateInfo vBufferAllocCI{
-      .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-               VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
-               VMA_ALLOCATION_CREATE_MAPPED_BIT,
-      .usage = VMA_MEMORY_USAGE_AUTO};
+    .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+             VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
+             VMA_ALLOCATION_CREATE_MAPPED_BIT,
+    .usage = VMA_MEMORY_USAGE_AUTO};
   VmaAllocationInfo vBufferAllocInfo{};
   chk(vmaCreateBuffer(allocator, &bufferCI, &vBufferAllocCI, &vBuffer, &vBufferAllocation,
                       &vBufferAllocInfo));
@@ -306,14 +306,14 @@ int main(int argc, char* argv[]) {
   // Shader data buffers
   for (auto i = 0; i < maxFramesInFlight; i++) {
     VkBufferCreateInfo uBufferCI{
-        .size = sizeof(ShaderData),
-        .usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+      .size = sizeof(ShaderData),
+      .usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
     };
     VmaAllocationCreateInfo uBufferAllocCI{
-        .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                 VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
-                 VMA_ALLOCATION_CREATE_MAPPED_BIT,
-        .usage = VMA_MEMORY_USAGE_AUTO,
+      .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+               VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
+               VMA_ALLOCATION_CREATE_MAPPED_BIT,
+      .usage = VMA_MEMORY_USAGE_AUTO,
     };
     chk(vmaCreateBuffer(allocator, &uBufferCI, &uBufferAllocCI, &shaderDataBuffers[i].buffer,
                         &shaderDataBuffers[i].allocation, &shaderDataBuffers[i].allocationInfo));
@@ -338,13 +338,13 @@ int main(int argc, char* argv[]) {
 // Command pool
 #pragma region
   VkCommandPoolCreateInfo commandPoolCI{
-      .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-      .queueFamilyIndex = queueFamily,
+    .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+    .queueFamilyIndex = queueFamily,
   };
   chk(vkCreateCommandPool(device, &commandPoolCI, nullptr, &commandPool));
   VkCommandBufferAllocateInfo cbAllocCI{
-      .commandPool = commandPool,
-      .commandBufferCount = maxFramesInFlight,
+    .commandPool = commandPool,
+    .commandBufferCount = maxFramesInFlight,
   };
   chk(vkAllocateCommandBuffers(device, &cbAllocCI, commandBuffers.data()));
 #pragma endregion
@@ -355,8 +355,8 @@ int main(int argc, char* argv[]) {
   size_t sz = 0;
   uint8_t* bytes = read_file(path, &sz);
   VkShaderModuleCreateInfo shaderModuleCI{
-      .codeSize = sz,
-      .pCode = (const uint32_t*)bytes,
+    .codeSize = sz,
+    .pCode = (const uint32_t*)bytes,
   };
   VkShaderModule shaderModule{};
   chk(vkCreateShaderModule(device, &shaderModuleCI, nullptr, &shaderModule));
@@ -365,59 +365,59 @@ int main(int argc, char* argv[]) {
 // PIPELINE
 #pragma region
   std::vector<VkPipelineShaderStageCreateInfo> shaderStages{
-      {.stage = VK_SHADER_STAGE_VERTEX_BIT, .module = shaderModule, .pName = "main"},
-      {.stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = shaderModule, .pName = "main"},
+    {.stage = VK_SHADER_STAGE_VERTEX_BIT, .module = shaderModule, .pName = "main"},
+    {.stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = shaderModule, .pName = "main"},
   };
   VkVertexInputBindingDescription vertexBinding{
-      .binding = 0,
-      .stride = sizeof(Vertex),
-      .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+    .binding = 0,
+    .stride = sizeof(Vertex),
+    .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
   };
   std::vector<VkVertexInputAttributeDescription> vertexAttributes{
-      // Position
-      {.location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT},
+    // Position
+    {.location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT},
   };
   VkPipelineVertexInputStateCreateInfo vertexInputState{
-      .vertexBindingDescriptionCount = 1,
-      .pVertexBindingDescriptions = &vertexBinding,
-      .vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexAttributes.size()),
-      .pVertexAttributeDescriptions = vertexAttributes.data(),
+    .vertexBindingDescriptionCount = 1,
+    .pVertexBindingDescriptions = &vertexBinding,
+    .vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexAttributes.size()),
+    .pVertexAttributeDescriptions = vertexAttributes.data(),
   };
   VkPipelineInputAssemblyStateCreateInfo inputAssemblyState{
-      .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+    .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
   };
   std::vector<VkDynamicState> dynamicStates{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
   VkPipelineDynamicStateCreateInfo dynamicState{
-      .dynamicStateCount = 2,
-      .pDynamicStates = dynamicStates.data(),
+    .dynamicStateCount = 2,
+    .pDynamicStates = dynamicStates.data(),
   };
   VkPipelineViewportStateCreateInfo viewportState{.viewportCount = 1, .scissorCount = 1};
   VkPipelineRasterizationStateCreateInfo rasterizationState{.lineWidth = 1.0f};
   VkPipelineMultisampleStateCreateInfo multisampleState{
-      .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+    .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
   };
   VkPipelineColorBlendAttachmentState blendAttachment{.colorWriteMask = 0xF};
   VkPipelineColorBlendStateCreateInfo colorBlendState{
-      .attachmentCount = 1,
-      .pAttachments = &blendAttachment,
+    .attachmentCount = 1,
+    .pAttachments = &blendAttachment,
   };
   VkPipelineRenderingCreateInfo renderingCI{
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-      .colorAttachmentCount = 1,
-      .pColorAttachmentFormats = &imageFormat,
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+    .colorAttachmentCount = 1,
+    .pColorAttachmentFormats = &imageFormat,
   };
   VkGraphicsPipelineCreateInfo pipelineCI{
-      .pNext = &renderingCI,
-      .stageCount = 2,
-      .pStages = shaderStages.data(),
-      .pVertexInputState = &vertexInputState,
-      .pInputAssemblyState = &inputAssemblyState,
-      .pViewportState = &viewportState,
-      .pRasterizationState = &rasterizationState,
-      .pMultisampleState = &multisampleState,
-      .pColorBlendState = &colorBlendState,
-      .pDynamicState = &dynamicState,
-      .layout = pipelineLayout,
+    .pNext = &renderingCI,
+    .stageCount = 2,
+    .pStages = shaderStages.data(),
+    .pVertexInputState = &vertexInputState,
+    .pInputAssemblyState = &inputAssemblyState,
+    .pViewportState = &viewportState,
+    .pRasterizationState = &rasterizationState,
+    .pMultisampleState = &multisampleState,
+    .pColorBlendState = &colorBlendState,
+    .pDynamicState = &dynamicState,
+    .layout = pipelineLayout,
   };
   chk(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineCI, nullptr, &pipeline));
 #pragma endregion
@@ -438,27 +438,27 @@ int main(int argc, char* argv[]) {
     auto cb = commandBuffers[frameIndex];
     chk(vkResetCommandBuffer(cb, 0));
     VkCommandBufferBeginInfo cbBI{
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+      .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     };
     chk(vkBeginCommandBuffer(cb, &cbBI));
     VkRenderingAttachmentInfo colorAttachmentInfo{
-        .imageView = swapchainImageViews[imageIndex],
-        .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue{.color{0.0f, 0.0f, 0.0f, 1.0f}},
+      .imageView = swapchainImageViews[imageIndex],
+      .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .clearValue{.color{0.0f, 0.0f, 0.0f, 1.0f}},
     };
     VkRenderingInfo renderingInfo{
-        .renderArea{.extent{.width = static_cast<uint32_t>(windowSize.x),
-                            .height = static_cast<uint32_t>(windowSize.y)}},
-        .layerCount = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &colorAttachmentInfo,
+      .renderArea{.extent{.width = static_cast<uint32_t>(windowSize.x),
+                          .height = static_cast<uint32_t>(windowSize.y)}},
+      .layerCount = 1,
+      .colorAttachmentCount = 1,
+      .pColorAttachments = &colorAttachmentInfo,
     };
     vkCmdBeginRendering(cb, &renderingInfo);
     VkViewport vp{
-        .width = static_cast<float>(windowSize.x),
-        .height = static_cast<float>(windowSize.y),
+      .width = static_cast<float>(windowSize.x),
+      .height = static_cast<float>(windowSize.y),
     };
     vkCmdSetViewport(cb, 0, 1, &vp);
     VkRect2D scissor{.extent{.width = static_cast<uint32_t>(windowSize.x),
@@ -473,39 +473,38 @@ int main(int argc, char* argv[]) {
     vkCmdDrawIndexed(cb, indexCount, 3, 0, 0, 0);
     vkCmdEndRendering(cb);
     VkImageMemoryBarrier2 barrierPresent{
-        .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-        .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-        .dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-        .dstAccessMask = 0,
-        .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-        .image = swapchainImages[imageIndex],
-        .subresourceRange{
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1}};
+      .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+      .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+      .dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+      .dstAccessMask = 0,
+      .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+      .image = swapchainImages[imageIndex],
+      .subresourceRange{.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1}};
     VkDependencyInfo barrierPresentDependencyInfo{
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &barrierPresent,
+      .imageMemoryBarrierCount = 1,
+      .pImageMemoryBarriers = &barrierPresent,
     };
     vkCmdPipelineBarrier2(cb, &barrierPresentDependencyInfo);
     chk(vkEndCommandBuffer(cb));
     // Submit to graphics queue
     VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo submitInfo{
-        .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &presentSemaphores[frameIndex],
-        .pWaitDstStageMask = &waitStages,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &cb,
-        .signalSemaphoreCount = 1,
-        .pSignalSemaphores = &renderSemaphores[imageIndex],
+      .waitSemaphoreCount = 1,
+      .pWaitSemaphores = &presentSemaphores[frameIndex],
+      .pWaitDstStageMask = &waitStages,
+      .commandBufferCount = 1,
+      .pCommandBuffers = &cb,
+      .signalSemaphoreCount = 1,
+      .pSignalSemaphores = &renderSemaphores[imageIndex],
     };
     chk(vkQueueSubmit(queue, 1, &submitInfo, fences[frameIndex]));
     VkPresentInfoKHR presentInfo{
-        .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &renderSemaphores[imageIndex],
-        .swapchainCount = 1,
-        .pSwapchains = &swapchain,
-        .pImageIndices = &imageIndex,
+      .waitSemaphoreCount = 1,
+      .pWaitSemaphores = &renderSemaphores[imageIndex],
+      .swapchainCount = 1,
+      .pSwapchains = &swapchain,
+      .pImageIndices = &imageIndex,
     };
     chkSwapchain(vkQueuePresentKHR(queue, &presentInfo));
     // Event polling
@@ -538,12 +537,12 @@ int main(int argc, char* argv[]) {
       swapchainImageViews.resize(imageCount);
       for (auto i = 0; i < imageCount; i++) {
         VkImageViewCreateInfo viewCI{
-            .image = swapchainImages[i],
-            .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = imageFormat,
-            .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                 .levelCount = 1,
-                                 .layerCount = 1},
+          .image = swapchainImages[i],
+          .viewType = VK_IMAGE_VIEW_TYPE_2D,
+          .format = imageFormat,
+          .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                               .levelCount = 1,
+                               .layerCount = 1},
         };
         chk(vkCreateImageView(device, &viewCI, nullptr, &swapchainImageViews[i]));
       }
@@ -551,8 +550,8 @@ int main(int argc, char* argv[]) {
       VmaAllocationCreateInfo allocCI{.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
                                       .usage = VMA_MEMORY_USAGE_AUTO};
       VkImageViewCreateInfo viewCI{
-          .viewType = VK_IMAGE_VIEW_TYPE_2D,
-          .subresourceRange = {.levelCount = 1, .layerCount = 1},
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .subresourceRange = {.levelCount = 1, .layerCount = 1},
       };
     }
   }
