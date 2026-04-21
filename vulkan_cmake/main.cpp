@@ -181,7 +181,6 @@ int main(int argc, char* argv[]) {
   };
   VkPhysicalDeviceVulkan13Features enabledVk13Features{
     .synchronization2 = true,
-    .dynamicRendering = true,
   };
   VkPhysicalDeviceVulkan12Features enabledVk12Features{
     .pNext = &enabledVk13Features,

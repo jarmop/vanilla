@@ -40,12 +40,8 @@ uint32_t swapchainImageCount;
 VkImageView* swapchainImageViews;
 
 /* Pipeline */
-VkRenderPass renderPass;
 VkPipelineLayout pipelineLayout;
 VkPipeline graphicsPipeline;
-
-/* Framebuffers */
-VkFramebuffer* framebuffers;
 
 /* Command */
 VkCommandPool commandPool;
@@ -228,36 +224,6 @@ void createImageViews() {
   }
 }
 
-/* Render pass */
-void createRenderPass() {
-  VkAttachmentDescription color = {
-    .format = swapchainImageFormat,
-    .samples = VK_SAMPLE_COUNT_1_BIT,
-    .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-    .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-    .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-    .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-  };
-
-  VkAttachmentReference ref = {.attachment = 0, .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-
-  VkSubpassDescription subpass = {
-    .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-    .colorAttachmentCount = 1,
-    .pColorAttachments = &ref,
-  };
-
-  VkRenderPassCreateInfo info = {
-    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-    .attachmentCount = 1,
-    .pAttachments = &color,
-    .subpassCount = 1,
-    .pSubpasses = &subpass,
-  };
-
-  CHECK(vkCreateRenderPass(device, &info, NULL, &renderPass));
-}
-
 /* Shader module */
 VkShaderModule createShaderModule(const char* file) {
   size_t size;
@@ -342,8 +308,15 @@ void createPipeline() {
 
   CHECK(vkCreatePipelineLayout(device, &layoutInfo, NULL, &pipelineLayout));
 
+  VkPipelineRenderingCreateInfo renderingInfo = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+    .colorAttachmentCount = 1,
+    .pColorAttachmentFormats = &swapchainImageFormat,
+  };
+
   VkGraphicsPipelineCreateInfo pipe = {
     .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+    .pNext = &renderingInfo,
     .stageCount = 2,
     .pStages = stages,
     .pVertexInputState = &vertex,
@@ -353,35 +326,12 @@ void createPipeline() {
     .pMultisampleState = &msaa,
     .pColorBlendState = &blend,
     .layout = pipelineLayout,
-    .renderPass = renderPass,
-    .subpass = 0,
   };
 
   CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipe, NULL, &graphicsPipeline));
 
   vkDestroyShaderModule(device, vert, NULL);
   vkDestroyShaderModule(device, frag, NULL);
-}
-
-/* Framebuffers */
-void createFramebuffers() {
-  framebuffers = malloc(sizeof(VkFramebuffer) * swapchainImageCount);
-
-  for (uint32_t i = 0; i < swapchainImageCount; i++) {
-    VkImageView attachments[] = {swapchainImageViews[i]};
-
-    VkFramebufferCreateInfo info = {
-      .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-      .renderPass = renderPass,
-      .attachmentCount = 1,
-      .pAttachments = attachments,
-      .width = swapchainExtent.width,
-      .height = swapchainExtent.height,
-      .layers = 1,
-    };
-
-    CHECK(vkCreateFramebuffer(device, &info, NULL, &framebuffers[i]));
-  }
 }
 
 /* Command buffers */
@@ -409,21 +359,19 @@ void createCommandBuffers() {
 
     vkBeginCommandBuffer(commandBuffers[i], &begin);
 
-    VkClearValue clear = {{{0.1f, 0.1f, 0.1f, 1.0f}}};
-
-    VkRenderPassBeginInfo rp = {
-      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-      .renderPass = renderPass,
-      .framebuffer = framebuffers[i],
-      .renderArea = {{0, 0}, swapchainExtent},
-      .clearValueCount = 1,
-      .pClearValues = &clear,
+    VkRenderingAttachmentInfo colorAttachmentInfo = {.imageView = swapchainImageViews[i]};
+    VkRenderingInfo renderingInfo = {
+      .renderArea = {.extent = swapchainExtent},
+      .layerCount = 1,
+      .colorAttachmentCount = 1,
+      .pColorAttachments = &colorAttachmentInfo,
     };
+    vkCmdBeginRendering(commandBuffers[i], &renderingInfo);
 
-    vkCmdBeginRenderPass(commandBuffers[i], &rp, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
     vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
-    vkCmdEndRenderPass(commandBuffers[i]);
+
+    vkCmdEndRendering(commandBuffers[i]);
 
     vkEndCommandBuffer(commandBuffers[i]);
   }
@@ -502,13 +450,11 @@ void cleanup() {
   }
 
   for (uint32_t i = 0; i < swapchainImageCount; i++) {
-    vkDestroyFramebuffer(device, framebuffers[i], NULL);
     vkDestroyImageView(device, swapchainImageViews[i], NULL);
   }
 
   vkDestroyPipeline(device, graphicsPipeline, NULL);
   vkDestroyPipelineLayout(device, pipelineLayout, NULL);
-  vkDestroyRenderPass(device, renderPass, NULL);
   vkDestroySwapchainKHR(device, swapchain, NULL);
   vkDestroyCommandPool(device, commandPool, NULL);
   vkDestroyDevice(device, NULL);
@@ -519,7 +465,6 @@ void cleanup() {
   glfwTerminate();
 }
 
-/* Entry */
 int main() {
   initWindow();
   createInstance();
@@ -528,9 +473,7 @@ int main() {
   createLogicalDevice();
   createSwapchain();
   createImageViews();
-  createRenderPass();
   createPipeline();
-  createFramebuffers();
   createCommandBuffers();
   createSync();
 
