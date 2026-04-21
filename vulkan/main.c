@@ -142,8 +142,15 @@ void createLogicalDevice() {
 
   const char* extensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
+  VkPhysicalDeviceVulkan13Features enabledVk13Features = {
+    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+    .synchronization2 = VK_TRUE,
+    .dynamicRendering = VK_TRUE,
+  };
+
   VkDeviceCreateInfo info = {
     .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+    .pNext = &enabledVk13Features,
     .queueCreateInfoCount = (graphicsFamily == presentFamily) ? 1 : 2,
     .pQueueCreateInfos = queues,
     .enabledExtensionCount = 1,
@@ -359,8 +366,32 @@ void createCommandBuffers() {
 
     vkBeginCommandBuffer(commandBuffers[i], &begin);
 
-    VkRenderingAttachmentInfo colorAttachmentInfo = {.imageView = swapchainImageViews[i]};
+    VkImageMemoryBarrier barrier = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+      .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .newLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR,
+      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .image = swapchainImages[i],
+      .subresourceRange =
+        {
+          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+          .levelCount = 1,
+          .layerCount = 1,
+        },
+    };
+
+    vkCmdPipelineBarrier(commandBuffers[i], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, NULL, 0, NULL, 1,
+                         &barrier);
+
+    VkRenderingAttachmentInfo colorAttachmentInfo = {
+      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+      .imageView = swapchainImageViews[i],
+      .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR,
+    };
     VkRenderingInfo renderingInfo = {
+      .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
       .renderArea = {.extent = swapchainExtent},
       .layerCount = 1,
       .colorAttachmentCount = 1,
@@ -372,6 +403,12 @@ void createCommandBuffers() {
     vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
 
     vkCmdEndRendering(commandBuffers[i]);
+
+    barrier.oldLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR;
+    barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    vkCmdPipelineBarrier(commandBuffers[i], VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
 
     vkEndCommandBuffer(commandBuffers[i]);
   }
