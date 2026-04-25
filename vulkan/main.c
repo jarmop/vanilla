@@ -175,25 +175,6 @@ static VkExtent2D chooseSurfaceExtent(GLFWwindow* window,
   };
 }
 
-static VkPresentModeKHR choosePresentMode(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface) {
-  // FIFO is the only presentMode that is required to be supported by Vulkan, so we don't need to
-  // check if it's supported by the physical device. (Physical devices don't even list it among
-  // their supported present modes)
-  VkPresentModeKHR selectedPresentMode = VK_PRESENT_MODE_FIFO_KHR;
-  uint32_t presentModeCount;
-  vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, NULL);
-  VkPresentModeKHR presentModes[presentModeCount];
-  vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount,
-                                            presentModes);
-  for (uint32_t i = 0; i < presentModeCount - 1; i++) {
-    if (presentModes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
-      selectedPresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
-    }
-  }
-
-  return selectedPresentMode;
-}
-
 void createSwapchain(GLFWwindow* window, VkSurfaceKHR surface, VkPhysicalDevice physicalDevice,
                      VkDevice device, Swapchain* swapchain) {
   VkSurfaceCapabilitiesKHR surfaceCapabilities;
@@ -211,7 +192,7 @@ void createSwapchain(GLFWwindow* window, VkSurfaceKHR surface, VkPhysicalDevice 
     .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
     .preTransform = surfaceCapabilities.currentTransform,
     .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-    .presentMode = choosePresentMode(physicalDevice, surface),
+    .presentMode = VK_PRESENT_MODE_FIFO_KHR,
     .clipped = VK_TRUE,
   };
   CHECK(vkCreateSwapchainKHR(device, &info, NULL, &swapchain->handle));
