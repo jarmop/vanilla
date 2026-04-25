@@ -15,9 +15,9 @@ typedef struct {
 } Swapchain;
 
 typedef struct {
-  VkSemaphore imageAvailableSemaphores;
-  VkSemaphore renderFinishedSemaphores;
-  VkFence inFlightFences;
+  VkSemaphore imageAvailableSemaphore;
+  VkSemaphore renderFinishedSemaphore;
+  VkFence inFlightFence;
 } Frame;
 
 #endif

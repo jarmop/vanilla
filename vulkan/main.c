@@ -114,6 +114,8 @@ void createLogicalDevice(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIn
     .shaderDrawParameters = true,
   };
 
+  // VkPhysicalDeviceFeatures enabledVk10Features = {.sampleRateShading = true};
+
   float priority = 1.0f;
 
   const char* enabledExtensionNames[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
@@ -130,6 +132,7 @@ void createLogicalDevice(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIn
     }},
     .enabledExtensionCount = 1,
     .ppEnabledExtensionNames = enabledExtensionNames,
+    // .pEnabledFeatures = &enabledVk10Features,
   };
 
   CHECK(vkCreateDevice(physicalDevice, &info, NULL, device));
@@ -247,11 +250,11 @@ void createPipeline(VkDevice device, Swapchain* swapchain, VkPipeline* graphicsP
   VkPipelineRenderingCreateInfo renderingInfo = {
     .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
     .colorAttachmentCount = 1,
-    .pColorAttachmentFormats = &swapchain->imageFormat,
+    .pColorAttachmentFormats = (VkFormat[]){swapchain->imageFormat},
   };
 
   VkShaderModule triangle = createShaderModule("shaders/triangle.spv", device);
-  VkPipelineShaderStageCreateInfo stages[2] = {
+  VkPipelineShaderStageCreateInfo stages[] = {
     {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
       .stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -298,12 +301,17 @@ void createPipeline(VkDevice device, Swapchain* swapchain, VkPipeline* graphicsP
   VkPipelineMultisampleStateCreateInfo multiSampleState = {
     .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
     .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+    // .sampleShadingEnable = VK_TRUE,
   };
 
   VkPipelineColorBlendStateCreateInfo colorBlendState = {
     .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
     .attachmentCount = 1,
-    .pAttachments = (VkPipelineColorBlendAttachmentState[]){{.colorWriteMask = 0xF}},
+    .pAttachments = (VkPipelineColorBlendAttachmentState[]){{
+      // .colorWriteMask = 0xF,
+      .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+    }},
   };
 
   VkPipelineLayoutCreateInfo layoutInfo = {.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
@@ -332,6 +340,7 @@ void createCommandBuffers(VkDevice device, int32_t queueFamilyIndex, Swapchain* 
                           VkPipeline graphicsPipeline, VkCommandBuffer** commandBuffersPtr) {
   VkCommandPoolCreateInfo pool = {
     .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+    // .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
     .queueFamilyIndex = queueFamilyIndex,
   };
   VkCommandPool commandPool;
@@ -346,10 +355,12 @@ void createCommandBuffers(VkDevice device, int32_t queueFamilyIndex, Swapchain* 
   VkCommandBuffer* commandBuffers = malloc(sizeof(VkCommandBuffer) * alloc.commandBufferCount);
   CHECK(vkAllocateCommandBuffers(device, &alloc, commandBuffers));
 
-  for (uint32_t i = 0; i < swapchain->imageCount; i++) {
+  for (uint32_t i = 0; i < alloc.commandBufferCount; i++) {
     VkCommandBufferBeginInfo begin = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
 
-    vkBeginCommandBuffer(commandBuffers[i], &begin);
+    VkCommandBuffer commandBuffer = commandBuffers[i];
+
+    vkBeginCommandBuffer(commandBuffer, &begin);
 
     VkImageMemoryBarrier barrier = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -365,7 +376,7 @@ void createCommandBuffers(VkDevice device, int32_t queueFamilyIndex, Swapchain* 
           .layerCount = 1,
         },
     };
-    vkCmdPipelineBarrier(commandBuffers[i], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, NULL, 0, NULL, 1,
                          &barrier);
 
@@ -381,20 +392,20 @@ void createCommandBuffers(VkDevice device, int32_t queueFamilyIndex, Swapchain* 
       .colorAttachmentCount = 1,
       .pColorAttachments = &colorAttachmentInfo,
     };
-    vkCmdBeginRendering(commandBuffers[i], &renderingInfo);
+    vkCmdBeginRendering(commandBuffer, &renderingInfo);
 
-    vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-    vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
-    vkCmdEndRendering(commandBuffers[i]);
+    vkCmdEndRendering(commandBuffer);
 
     barrier.oldLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR;
     barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-    vkCmdPipelineBarrier(commandBuffers[i], VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                          VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
 
-    vkEndCommandBuffer(commandBuffers[i]);
+    vkEndCommandBuffer(commandBuffer);
   }
 
   *commandBuffersPtr = commandBuffers;
@@ -408,9 +419,9 @@ void createFrames(VkDevice device, Frame* frames) {
   };
 
   for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    CHECK(vkCreateSemaphore(device, &sem, NULL, &frames[i].imageAvailableSemaphores));
-    CHECK(vkCreateSemaphore(device, &sem, NULL, &frames[i].renderFinishedSemaphores));
-    CHECK(vkCreateFence(device, &fence, NULL, &frames[i].inFlightFences));
+    CHECK(vkCreateSemaphore(device, &sem, NULL, &frames[i].imageAvailableSemaphore));
+    CHECK(vkCreateSemaphore(device, &sem, NULL, &frames[i].renderFinishedSemaphore));
+    CHECK(vkCreateFence(device, &fence, NULL, &frames[i].inFlightFence));
   }
 }
 
@@ -439,25 +450,25 @@ void initVulkan(GLFWwindow* window, VkDevice* device, VkQueue* queue, Swapchain*
 
 void drawFrame(VkDevice device, VkQueue queue, VkSwapchainKHR swapchain,
                VkCommandBuffer* commandBuffers, Frame* frame) {
-  vkWaitForFences(device, 1, &frame->inFlightFences, VK_TRUE, UINT64_MAX);
-  vkResetFences(device, 1, &frame->inFlightFences);
+  vkWaitForFences(device, 1, &frame->inFlightFence, VK_TRUE, UINT64_MAX);
+  vkResetFences(device, 1, &frame->inFlightFence);
 
   uint32_t imageIndex;
-  vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, frame->imageAvailableSemaphores,
+  vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, frame->imageAvailableSemaphore,
                         VK_NULL_HANDLE, &imageIndex);
 
   VkSubmitInfo submit = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO};
-  VkSemaphore waitSem[] = {frame->imageAvailableSemaphores};
+  VkSemaphore waitSem[] = {frame->imageAvailableSemaphore};
   VkPipelineStageFlags stage[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
   submit.waitSemaphoreCount = 1;
   submit.pWaitSemaphores = waitSem;
   submit.pWaitDstStageMask = stage;
   submit.commandBufferCount = 1;
   submit.pCommandBuffers = &commandBuffers[imageIndex];
-  VkSemaphore signalSem[] = {frame->renderFinishedSemaphores};
+  VkSemaphore signalSem[] = {frame->renderFinishedSemaphore};
   submit.signalSemaphoreCount = 1;
   submit.pSignalSemaphores = signalSem;
-  vkQueueSubmit(queue, 1, &submit, frame->inFlightFences);
+  vkQueueSubmit(queue, 1, &submit, frame->inFlightFence);
 
   VkPresentInfoKHR present = {
     .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
