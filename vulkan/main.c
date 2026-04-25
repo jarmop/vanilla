@@ -108,13 +108,19 @@ void createLogicalDevice(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIn
     .dynamicRendering = VK_TRUE,
   };
 
+  VkPhysicalDeviceVulkan11Features enabledVk11Features = {
+    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+    .pNext = &enabledVk13Features,
+    .shaderDrawParameters = true,
+  };
+
   float priority = 1.0f;
 
   const char* enabledExtensionNames[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
   VkDeviceCreateInfo info = {
     .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-    .pNext = &enabledVk13Features,
+    .pNext = &enabledVk11Features,
     .queueCreateInfoCount = 1,
     .pQueueCreateInfos = (VkDeviceQueueCreateInfo[]){{
       .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -244,28 +250,30 @@ void createPipeline(VkDevice device, Swapchain* swapchain, VkPipeline* graphicsP
     .pColorAttachmentFormats = &swapchain->imageFormat,
   };
 
-  VkShaderModule vert = createShaderModule("shaders/vert.spv", device);
-  VkShaderModule frag = createShaderModule("shaders/frag.spv", device);
+  VkShaderModule triangle = createShaderModule("shaders/triangle.spv", device);
   VkPipelineShaderStageCreateInfo stages[2] = {
     {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
       .stage = VK_SHADER_STAGE_VERTEX_BIT,
-      .module = vert,
-      .pName = "main",
+      .module = triangle,
+      .pName = "vertMain",
     },
     {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
       .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-      .module = frag,
-      .pName = "main",
-    }};
+      .module = triangle,
+      .pName = "fragMain",
+    },
+  };
 
   VkPipelineVertexInputStateCreateInfo vertexInputState = {
-    .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+  };
 
   VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = {
     .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-    .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
+    .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+  };
 
   VkPipelineViewportStateCreateInfo viewportState = {
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
@@ -317,8 +325,7 @@ void createPipeline(VkDevice device, Swapchain* swapchain, VkPipeline* graphicsP
   };
   CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipe, NULL, graphicsPipeline));
 
-  vkDestroyShaderModule(device, vert, NULL);
-  vkDestroyShaderModule(device, frag, NULL);
+  vkDestroyShaderModule(device, triangle, NULL);
 }
 
 void createCommandBuffers(VkDevice device, int32_t queueFamilyIndex, Swapchain* swapchain,
