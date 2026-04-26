@@ -401,7 +401,7 @@ void initVulkan(GLFWwindow* window, VkDevice* device, VkQueue* queue, Swapchain*
   createSyncObjects(*device, swapchain->imageCount, syncObjects);
 }
 
-void recordCommandBuffers(uint32_t imageIndex, VkCommandBuffer* commandBuffer,
+void recordCommandBuffers(uint32_t imageIndex, VkCommandBuffer commandBuffer,
                           VkPipeline graphicsPipeline, Swapchain* swapchain) {
   // Bunch of stuff needs to be based on the imageIndex rather than frame. So even if there is only
   // one command buffer per "frame in flight" (2) the commands are recreated on every image (4)
@@ -409,7 +409,7 @@ void recordCommandBuffers(uint32_t imageIndex, VkCommandBuffer* commandBuffer,
 
   // VkCommandBuffer commandBuffer = commandBuffers[i];
 
-  vkBeginCommandBuffer(*commandBuffer, &begin);
+  vkBeginCommandBuffer(commandBuffer, &begin);
 
   VkImageMemoryBarrier barrier = {
     .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -425,7 +425,7 @@ void recordCommandBuffers(uint32_t imageIndex, VkCommandBuffer* commandBuffer,
         .layerCount = 1,
       },
   };
-  vkCmdPipelineBarrier(*commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+  vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, NULL, 0, NULL, 1,
                        &barrier);
 
@@ -441,20 +441,20 @@ void recordCommandBuffers(uint32_t imageIndex, VkCommandBuffer* commandBuffer,
     .colorAttachmentCount = 1,
     .pColorAttachments = &colorAttachmentInfo,
   };
-  vkCmdBeginRendering(*commandBuffer, &renderingInfo);
+  vkCmdBeginRendering(commandBuffer, &renderingInfo);
 
-  vkCmdBindPipeline(*commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-  vkCmdDraw(*commandBuffer, 3, 1, 0, 0);
+  vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+  vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
-  vkCmdEndRendering(*commandBuffer);
+  vkCmdEndRendering(commandBuffer);
 
   barrier.oldLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR;
   barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-  vkCmdPipelineBarrier(*commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+  vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
 
-  vkEndCommandBuffer(*commandBuffer);
+  vkEndCommandBuffer(commandBuffer);
 }
 
 void drawFrame(VkDevice device, VkQueue queue, Swapchain* swapchain,
@@ -470,25 +470,24 @@ void drawFrame(VkDevice device, VkQueue queue, Swapchain* swapchain,
 
   VkCommandBuffer commandBuffer = commandBuffers[currentFrame];
   vkResetCommandBuffer(commandBuffer, VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
-  recordCommandBuffers(imageIndex, &commandBuffer, graphicsPipeline, swapchain);
+  recordCommandBuffers(imageIndex, commandBuffer, graphicsPipeline, swapchain);
 
-  VkSubmitInfo submit = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO};
-  VkSemaphore waitSem[] = {syncObjects->imageAvailableSemaphores[currentFrame]};
-  VkPipelineStageFlags stage[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-  submit.waitSemaphoreCount = 1;
-  submit.pWaitSemaphores = waitSem;
-  submit.pWaitDstStageMask = stage;
-  submit.commandBufferCount = 1;
-  submit.pCommandBuffers = &commandBuffer;
-  VkSemaphore signalSem[] = {syncObjects->renderFinishedSemaphores[imageIndex]};
-  submit.signalSemaphoreCount = 1;
-  submit.pSignalSemaphores = signalSem;
+  VkSubmitInfo submit = {
+    .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+    .waitSemaphoreCount = 1,
+    .pWaitSemaphores = (VkSemaphore[]){syncObjects->imageAvailableSemaphores[currentFrame]},
+    .pWaitDstStageMask = (VkPipelineStageFlags[]){VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT},
+    .commandBufferCount = 1,
+    .pCommandBuffers = &commandBuffer,
+    .signalSemaphoreCount = 1,
+    .pSignalSemaphores = (VkSemaphore[]){syncObjects->renderFinishedSemaphores[imageIndex]},
+  };
   vkQueueSubmit(queue, 1, &submit, syncObjects->inFlightFences[currentFrame]);
 
   VkPresentInfoKHR present = {
     .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
     .waitSemaphoreCount = 1,
-    .pWaitSemaphores = signalSem,
+    .pWaitSemaphores = (VkSemaphore[]){syncObjects->renderFinishedSemaphores[imageIndex]},
     .swapchainCount = 1,
     .pSwapchains = &swapchain->handle,
     .pImageIndices = &imageIndex,
