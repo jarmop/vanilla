@@ -13,14 +13,15 @@
 #define min(x, y) (((x) < (y)) ? (x) : (y))
 #define max(x, y) (((x) > (y)) ? (x) : (y))
 
+size_t currentFrame = 0;
+bool framebufferResized = false;
+
 void CHECK(int x) {
   if ((x) != VK_SUCCESS) {
     printf("Vulkan error: %d\n", x);
     exit(1);
   }
 }
-
-size_t currentFrame = 0;
 
 static char* readFile(const char* filename, size_t* size) {
   FILE* f = fopen(filename, "rb");
@@ -40,6 +41,13 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
   if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
     glfwSetWindowShouldClose(window, true);
   }
+}
+
+void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
+  (void)window;
+  (void)width;
+  (void)height;
+  framebufferResized = true;
 }
 
 void createInstance(VkInstance* instance) {
@@ -378,21 +386,20 @@ void createSyncObjects(VkDevice device, uint32_t swapchainImageCount, SyncObject
   }
 }
 
-void initVulkan(GLFWwindow* window, VkDevice* device, VkQueue* queue, Swapchain* swapchain,
+void initVulkan(GLFWwindow* window, VkSurfaceKHR* surface, VkPhysicalDevice* physicalDevice,
+                VkDevice* device, VkQueue* queue, Swapchain* swapchain,
                 VkPipeline* graphicsPipeline, VkCommandBuffer** commandBuffers,
                 SyncObjects* syncObjects) {
   VkInstance instance;
   createInstance(&instance);
 
-  VkSurfaceKHR surface;
-  CHECK(glfwCreateWindowSurface(instance, window, NULL, &surface));
+  CHECK(glfwCreateWindowSurface(instance, window, NULL, surface));
 
-  VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-  uint32_t queueFamilyIndex = pickPhysicalDevice(instance, surface, &physicalDevice);
-  createLogicalDevice(physicalDevice, queueFamilyIndex, device);
+  uint32_t queueFamilyIndex = pickPhysicalDevice(instance, *surface, physicalDevice);
+  createLogicalDevice(*physicalDevice, queueFamilyIndex, device);
   vkGetDeviceQueue(*device, queueFamilyIndex, 0, queue);
 
-  createSwapchain(window, surface, physicalDevice, *device, swapchain);
+  createSwapchain(window, *surface, *physicalDevice, *device, swapchain);
 
   createPipeline(*device, swapchain, graphicsPipeline);
 
@@ -493,6 +500,8 @@ void drawFrame(VkDevice device, VkQueue queue, Swapchain* swapchain,
     .pImageIndices = &imageIndex,
   };
   vkQueuePresentKHR(queue, &present);
+
+  currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 int main() {
@@ -500,7 +509,10 @@ int main() {
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
   GLFWwindow* window = glfwCreateWindow(800, 600, "Vulkan Triangle", NULL, NULL);
   glfwSetKeyCallback(window, keyCallback);
+  glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
 
+  VkSurfaceKHR surface;
+  VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
   VkDevice device;
   // Commandbuffers are sent to the queue which is then submitted to the GPU
   VkQueue queue;
@@ -512,12 +524,29 @@ int main() {
   VkPipeline graphicsPipeline;
   SyncObjects syncObjects;
 
-  initVulkan(window, &device, &queue, &swapchain, &graphicsPipeline, &commandBuffers, &syncObjects);
+  initVulkan(window, &surface, &physicalDevice, &device, &queue, &swapchain, &graphicsPipeline,
+             &commandBuffers, &syncObjects);
 
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
     drawFrame(device, queue, &swapchain, commandBuffers, graphicsPipeline, &syncObjects);
-    currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+
+    if (framebufferResized) {
+      framebufferResized = false;
+
+      // If window was minimized, Wait until it's expanded again
+      int width = 0, height = 0;
+      glfwGetFramebufferSize(window, &width, &height);
+      while (width == 0 || height == 0) {
+        glfwWaitEvents();
+        glfwGetFramebufferSize(window, &width, &height);
+      }
+
+      vkDeviceWaitIdle(device);
+
+      vkDestroySwapchainKHR(device, swapchain.handle, NULL);
+      createSwapchain(window, surface, physicalDevice, device, &swapchain);
+    }
   }
 
   return 0;
