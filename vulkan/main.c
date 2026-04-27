@@ -261,7 +261,7 @@ void createPipeline(VkDevice device, Swapchain* swapchain, VkPipeline* graphicsP
     .pColorAttachmentFormats = (VkFormat[]){swapchain->imageFormat},
   };
 
-  VkShaderModule triangle = createShaderModule("shaders/triangle.spv", device);
+  VkShaderModule triangle = createShaderModule("shaders/out.spv", device);
   VkPipelineShaderStageCreateInfo stages[] = {
     {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -277,8 +277,31 @@ void createPipeline(VkDevice device, Swapchain* swapchain, VkPipeline* graphicsP
     },
   };
 
+  const VkVertexInputBindingDescription vertexBindingDescriptions[] = {{
+    .binding = 0,
+    .stride = sizeof(Vertex),
+    .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+  }};
+  VkVertexInputAttributeDescription vertexAttributeDescriptions[] = {
+    {
+      .location = 0,
+      .binding = 0,
+      .format = VK_FORMAT_R32G32_SFLOAT,
+      .offset = offsetof(Vertex, pos),
+    },
+    {
+      .location = 1,
+      .binding = 0,
+      .format = VK_FORMAT_R32G32B32_SFLOAT,
+      .offset = offsetof(Vertex, color),
+    },
+  };
   VkPipelineVertexInputStateCreateInfo vertexInputState = {
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+    .vertexBindingDescriptionCount = 1,
+    .pVertexBindingDescriptions = vertexBindingDescriptions,
+    .vertexAttributeDescriptionCount = 2,
+    .pVertexAttributeDescriptions = vertexAttributeDescriptions,
   };
 
   VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = {
@@ -344,6 +367,72 @@ void createPipeline(VkDevice device, Swapchain* swapchain, VkPipeline* graphicsP
   vkDestroyShaderModule(device, triangle, NULL);
 }
 
+VkBuffer vertexBuffer;
+
+uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter,
+                        VkMemoryPropertyFlags properties) {
+  VkPhysicalDeviceMemoryProperties memProperties;
+  vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+  for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+    if ((typeFilter & (1 << i)) &&
+        (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+      return i;
+    }
+  }
+
+  fprintf(stderr, "failed to find suitable memory type\n");
+  exit(1);
+}
+
+int vertexCount = 3;
+
+void createVertexBuffer(VkDevice device, VkPhysicalDevice physicalDevice) {
+  // clang-format off
+  const Vertex vertices[] = {
+    {{ 0.0f, -0.5f }, {1.0f, 0.0f, 0.0f}},
+    {{ 0.5f,  0.5f }, {0.0f, 1.0f, 0.0f}},
+    {{-0.5f,  0.5f }, {0.0f, 0.0f, 1.0f}}
+  };
+  // clang-format on
+
+  VkDeviceSize bufferSize = sizeof(vertices);
+
+  VkBufferCreateInfo bufferInfo = {
+    .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+    .size = bufferSize,
+    .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+  };
+
+  if (vkCreateBuffer(device, &bufferInfo, NULL, &vertexBuffer) != VK_SUCCESS) {
+    perror("vkCreateBuffer");
+  }
+
+  VkMemoryRequirements memRequirements;
+  vkGetBufferMemoryRequirements(device, vertexBuffer, &memRequirements);
+
+  VkMemoryAllocateInfo allocInfo = {
+    .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+    .allocationSize = memRequirements.size,
+    .memoryTypeIndex =
+      findMemoryType(physicalDevice, memRequirements.memoryTypeBits,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
+  };
+
+  VkDeviceMemory vertexBufferMemory;
+  if (vkAllocateMemory(device, &allocInfo, NULL, &vertexBufferMemory) != VK_SUCCESS) {
+    perror("vkAllocateMemory");
+  }
+
+  vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
+
+  void* data;
+  vkMapMemory(device, vertexBufferMemory, 0, bufferSize, 0, &data);
+  memcpy(data, vertices, (size_t)bufferSize);
+  vkUnmapMemory(device, vertexBufferMemory);
+}
+
 void createCommandBuffers(VkDevice device, int32_t queueFamilyIndex,
                           VkCommandBuffer** commandBuffersPtr) {
   VkCommandPoolCreateInfo pool = {
@@ -403,6 +492,8 @@ void initVulkan(GLFWwindow* window, VkSurfaceKHR* surface, VkPhysicalDevice* phy
 
   createPipeline(*device, swapchain, graphicsPipeline);
 
+  createVertexBuffer(*device, *physicalDevice);
+
   createCommandBuffers(*device, queueFamilyIndex, commandBuffers);
 
   createSyncObjects(*device, swapchain->imageCount, syncObjects);
@@ -451,7 +542,9 @@ void recordCommandBuffers(uint32_t imageIndex, VkCommandBuffer commandBuffer,
   vkCmdBeginRendering(commandBuffer, &renderingInfo);
 
   vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-  vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+  VkDeviceSize vertexOffset = 0;
+  vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, &vertexOffset);
+  vkCmdDraw(commandBuffer, vertexCount, 1, 0, 0);
 
   vkCmdEndRendering(commandBuffer);
 
@@ -507,7 +600,7 @@ void drawFrame(VkDevice device, VkQueue queue, Swapchain* swapchain,
 int main() {
   glfwInit();
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  GLFWwindow* window = glfwCreateWindow(800, 600, "Vulkan Triangle", NULL, NULL);
+  GLFWwindow* window = glfwCreateWindow(800, 600, "Vulkan Tutorial", NULL, NULL);
   glfwSetKeyCallback(window, keyCallback);
   glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
 

@@ -20,4 +20,9 @@ typedef struct {
   VkFence* inFlightFences;
 } SyncObjects;
 
+typedef struct {
+  float pos[2];
+  float color[3];
+} Vertex;
+
 #endif
