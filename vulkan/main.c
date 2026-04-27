@@ -385,64 +385,90 @@ uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter,
   exit(1);
 }
 
-int vertexCount = 3;
+int vertexCount = 6;
+// clang-format off
+const Vertex vertices[] = {
+  {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+  {{ 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+  {{ 0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}},
+};
+// clang-format on
 
-void createVertexBuffer(VkDevice device, VkPhysicalDevice physicalDevice) {
-  // clang-format off
-  const Vertex vertices[] = {
-    {{ 0.0f, -0.5f }, {1.0f, 0.0f, 0.0f}},
-    {{ 0.5f,  0.5f }, {0.0f, 1.0f, 0.0f}},
-    {{-0.5f,  0.5f }, {0.0f, 0.0f, 1.0f}}
-  };
-  // clang-format on
-
-  VkDeviceSize bufferSize = sizeof(vertices);
-
+void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize bufferSize,
+                  VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memPropFlags,
+                  VkBuffer* buffer, VkDeviceMemory* bufferMemory) {
   VkBufferCreateInfo bufferInfo = {
     .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
     .size = bufferSize,
-    .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+    .usage = usageFlags,
     .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
   };
-
-  if (vkCreateBuffer(device, &bufferInfo, NULL, &vertexBuffer) != VK_SUCCESS) {
+  if (vkCreateBuffer(device, &bufferInfo, NULL, buffer) != VK_SUCCESS) {
     perror("vkCreateBuffer");
   }
-
   VkMemoryRequirements memRequirements;
-  vkGetBufferMemoryRequirements(device, vertexBuffer, &memRequirements);
-
-  VkMemoryAllocateInfo allocInfo = {
+  vkGetBufferMemoryRequirements(device, *buffer, &memRequirements);
+  VkMemoryAllocateInfo allocInfoStaging = {
     .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
     .allocationSize = memRequirements.size,
-    .memoryTypeIndex =
-      findMemoryType(physicalDevice, memRequirements.memoryTypeBits,
-                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
+    .memoryTypeIndex = findMemoryType(physicalDevice, memRequirements.memoryTypeBits, memPropFlags),
   };
-
-  VkDeviceMemory vertexBufferMemory;
-  if (vkAllocateMemory(device, &allocInfo, NULL, &vertexBufferMemory) != VK_SUCCESS) {
+  if (vkAllocateMemory(device, &allocInfoStaging, NULL, bufferMemory) != VK_SUCCESS) {
     perror("vkAllocateMemory");
   }
-
-  vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
-
-  void* data;
-  vkMapMemory(device, vertexBufferMemory, 0, bufferSize, 0, &data);
-  memcpy(data, vertices, (size_t)bufferSize);
-  vkUnmapMemory(device, vertexBufferMemory);
+  vkBindBufferMemory(device, *buffer, *bufferMemory, 0);
 }
 
-void createCommandBuffers(VkDevice device, int32_t queueFamilyIndex,
-                          VkCommandBuffer** commandBuffersPtr) {
-  VkCommandPoolCreateInfo pool = {
-    .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-    .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-    .queueFamilyIndex = queueFamilyIndex,
-  };
-  VkCommandPool commandPool;
-  CHECK(vkCreateCommandPool(device, &pool, NULL, &commandPool));
+void createVertexBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue,
+                        VkCommandPool commandPool) {
+  VkDeviceSize bufferSize = sizeof(vertices);
 
+  // STAGING VERTEX
+  VkBuffer vertexBufferStaging;
+  VkDeviceMemory vertexBufferMemoryStaging;
+  createBuffer(device, physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+               &vertexBufferStaging, &vertexBufferMemoryStaging);
+
+  void* data;
+  vkMapMemory(device, vertexBufferMemoryStaging, 0, bufferSize, 0, &data);
+  memcpy(data, vertices, (size_t)bufferSize);
+  vkUnmapMemory(device, vertexBufferMemoryStaging);
+
+  // FINAL VERTEX
+  VkDeviceMemory vertexBufferMemory;
+  createBuffer(device, physicalDevice, bufferSize,
+               VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+               &vertexBuffer, &vertexBufferMemory);
+
+  // Copy staging to final
+  VkCommandBufferAllocateInfo comBufAlloc = {
+    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+    .commandPool = commandPool,
+    .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+    .commandBufferCount = 1,
+  };
+  VkCommandBuffer* comCopyBuffers =
+    malloc(sizeof(VkCommandBuffer) * comBufAlloc.commandBufferCount);
+  CHECK(vkAllocateCommandBuffers(device, &comBufAlloc, comCopyBuffers));
+  VkCommandBuffer comCopyBuffer = comCopyBuffers[0];
+  VkCommandBufferBeginInfo begin = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+  vkBeginCommandBuffer(comCopyBuffer, &begin);
+  VkBufferCopy region = {.srcOffset = 0, .dstOffset = 0, .size = bufferSize};
+  vkCmdCopyBuffer(comCopyBuffer, vertexBufferStaging, vertexBuffer, 1, &region);
+  vkEndCommandBuffer(comCopyBuffer);
+  VkSubmitInfo submit = {
+    .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+    .commandBufferCount = 1,
+    .pCommandBuffers = comCopyBuffers,
+  };
+  vkQueueSubmit(queue, 1, &submit, NULL);
+  vkQueueWaitIdle(queue);
+}
+
+void createCommandBuffers(VkDevice device, VkCommandBuffer** commandBuffersPtr,
+                          VkCommandPool commandPool) {
   VkCommandBufferAllocateInfo alloc = {
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
     .commandPool = commandPool,
@@ -492,9 +518,17 @@ void initVulkan(GLFWwindow* window, VkSurfaceKHR* surface, VkPhysicalDevice* phy
 
   createPipeline(*device, swapchain, graphicsPipeline);
 
-  createVertexBuffer(*device, *physicalDevice);
+  VkCommandPoolCreateInfo pool = {
+    .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+    .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+    .queueFamilyIndex = queueFamilyIndex,
+  };
+  VkCommandPool commandPool;
+  CHECK(vkCreateCommandPool(*device, &pool, NULL, &commandPool));
 
-  createCommandBuffers(*device, queueFamilyIndex, commandBuffers);
+  createVertexBuffer(*device, *physicalDevice, *queue, commandPool);
+
+  createCommandBuffers(*device, commandBuffers, commandPool);
 
   createSyncObjects(*device, swapchain->imageCount, syncObjects);
 }
