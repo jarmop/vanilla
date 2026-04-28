@@ -3,6 +3,7 @@
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+#include <cglm/cglm.h>
 
 typedef struct {
   VkSwapchainKHR handle;
@@ -24,5 +25,17 @@ typedef struct {
   float pos[2];
   float color[3];
 } Vertex;
+
+// typedef struct {
+//   float model[4][4];
+//   float view[4][4];
+//   float proj[4][4];
+// } UniformBufferObject;
+
+typedef struct {
+  mat4 model;
+  mat4 view;
+  mat4 proj;
+} UniformBufferObject;
 
 #endif
