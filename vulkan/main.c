@@ -16,6 +16,7 @@
 
 size_t currentFrame = 0;
 bool framebufferResized = false;
+int indexCount;
 
 void CHECK(int x) {
   if ((x) != VK_SUCCESS) {
@@ -255,9 +256,7 @@ VkShaderModule createShaderModule(const char* file, VkDevice device) {
   return module;
 }
 
-VkDescriptorSetLayout descriptorSetLayout;
-
-void createDescriptorSetLayout(VkDevice device) {
+void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout) {
   VkDescriptorSetLayoutBinding uboLayoutBinding = {
     .binding = 0,
     .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -269,12 +268,12 @@ void createDescriptorSetLayout(VkDevice device) {
     .bindingCount = 1,
     .pBindings = &uboLayoutBinding,
   };
-  vkCreateDescriptorSetLayout(device, &layoutInfo, NULL, &descriptorSetLayout);
+  vkCreateDescriptorSetLayout(device, &layoutInfo, NULL, descriptorSetLayout);
 }
 
-VkPipelineLayout pipelineLayout;
-
-void createPipeline(VkDevice device, Swapchain* swapchain, VkPipeline* graphicsPipeline) {
+void createPipeline(VkDevice device, Swapchain* swapchain,
+                    VkDescriptorSetLayout descriptorSetLayout, VkPipeline* graphicsPipeline,
+                    VkPipelineLayout* pipelineLayout) {
   VkPipelineRenderingCreateInfo renderingInfo = {
     .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
     .colorAttachmentCount = 1,
@@ -372,7 +371,7 @@ void createPipeline(VkDevice device, Swapchain* swapchain, VkPipeline* graphicsP
     .pushConstantRangeCount = 0,
     .pPushConstantRanges = NULL,
   };
-  CHECK(vkCreatePipelineLayout(device, &layoutInfo, NULL, &pipelineLayout));
+  CHECK(vkCreatePipelineLayout(device, &layoutInfo, NULL, pipelineLayout));
 
   VkGraphicsPipelineCreateInfo pipe = {
     .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -385,7 +384,7 @@ void createPipeline(VkDevice device, Swapchain* swapchain, VkPipeline* graphicsP
     .pRasterizationState = &rasterizationState,
     .pMultisampleState = &multiSampleState,
     .pColorBlendState = &colorBlendState,
-    .layout = pipelineLayout,
+    .layout = *pipelineLayout,
   };
   CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipe, NULL, graphicsPipeline));
 
@@ -407,20 +406,6 @@ uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter,
   fprintf(stderr, "failed to find suitable memory type\n");
   exit(1);
 }
-
-VkBuffer vertexBuffer;
-VkBuffer indexBuffer;
-
-// clang-format off
-const Vertex vertices[] = {
-  {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-  {{ 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-  {{ 0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}},
-  {{-0.5f,  0.5f}, {1.0f, 1.0f, 1.0f}},
-};
-// clang-format on
-int indexCount = 6;
-const uint32_t indices[] = {0, 1, 2, 2, 3, 0};
 
 void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize bufferSize,
                   VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memPropFlags,
@@ -447,17 +432,22 @@ void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize
   vkBindBufferMemory(device, *buffer, *bufferMemory, 0);
 }
 
-void copyBuffer(VkDevice device, VkQueue queue, VkCommandPool commandPool, VkBuffer srcBuffer,
-                VkBuffer dstBuffer, VkDeviceSize bufferSize) {
-  VkCommandBufferAllocateInfo comBufAlloc = {
+VkCommandBuffer* createCommandBuffers(VkDevice device, VkCommandPool commandPool, uint32_t count) {
+  VkCommandBufferAllocateInfo info = {
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
     .commandPool = commandPool,
     .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-    .commandBufferCount = 1,
+    .commandBufferCount = count,
   };
-  VkCommandBuffer* comCopyBuffers =
-    malloc(sizeof(VkCommandBuffer) * comBufAlloc.commandBufferCount);
-  CHECK(vkAllocateCommandBuffers(device, &comBufAlloc, comCopyBuffers));
+  VkCommandBuffer* commandBuffers = malloc(sizeof(VkCommandBuffer) * info.commandBufferCount);
+  CHECK(vkAllocateCommandBuffers(device, &info, commandBuffers));
+  return commandBuffers;
+}
+
+void copyBuffer(VkDevice device, VkQueue queue, VkCommandPool commandPool, VkBuffer srcBuffer,
+                VkBuffer dstBuffer, VkDeviceSize bufferSize) {
+  VkCommandBuffer* comCopyBuffers = createCommandBuffers(device, commandPool, 1);
+
   VkCommandBuffer comCopyBuffer = comCopyBuffers[0];
   VkCommandBufferBeginInfo begin = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
   vkBeginCommandBuffer(comCopyBuffer, &begin);
@@ -471,67 +461,64 @@ void copyBuffer(VkDevice device, VkQueue queue, VkCommandPool commandPool, VkBuf
   };
   vkQueueSubmit(queue, 1, &submit, NULL);
   vkQueueWaitIdle(queue);
+  free(comCopyBuffers);
+}
+
+void createStagedBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue,
+                        VkCommandPool commandPool, VkDeviceSize bufferSize, const void* data,
+                        VkBufferUsageFlags usageFlags, VkBuffer* buffer) {
+  // STAGING BUFFER
+  VkBuffer bufferStaging;
+  VkDeviceMemory bufferMemoryStaging;
+  createBuffer(device, physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+               &bufferStaging, &bufferMemoryStaging);
+
+  void* tempData;
+  vkMapMemory(device, bufferMemoryStaging, 0, bufferSize, 0, &tempData);
+  memcpy(tempData, data, (size_t)bufferSize);
+  vkUnmapMemory(device, bufferMemoryStaging);
+
+  // FINAL BUFFER
+  VkDeviceMemory bufferMemory;
+  createBuffer(device, physicalDevice, bufferSize, usageFlags | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+               //  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer, &bufferMemory);
+
+  // Copy staging to final
+  copyBuffer(device, queue, commandPool, bufferStaging, *buffer, bufferSize);
 }
 
 void createVertexBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue,
-                        VkCommandPool commandPool) {
+                        VkCommandPool commandPool, VkBuffer* vertexBuffer) {
+  // clang-format off
+  const Vertex vertices[] = {
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{ 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{ 0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{-0.5f,  0.5f}, {1.0f, 1.0f, 1.0f}},
+  };
+  // clang-format on
   VkDeviceSize bufferSize = sizeof(vertices);
 
-  // STAGING BUFFER
-  VkBuffer vertexBufferStaging;
-  VkDeviceMemory vertexBufferMemoryStaging;
-  createBuffer(device, physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-               &vertexBufferStaging, &vertexBufferMemoryStaging);
-
-  void* data;
-  vkMapMemory(device, vertexBufferMemoryStaging, 0, bufferSize, 0, &data);
-  memcpy(data, vertices, (size_t)bufferSize);
-  vkUnmapMemory(device, vertexBufferMemoryStaging);
-
-  // FINAL BUFFER
-  VkDeviceMemory vertexBufferMemory;
-  createBuffer(device, physicalDevice, bufferSize,
-               VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-               //  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &vertexBuffer, &vertexBufferMemory);
-
-  // Copy staging to final
-  copyBuffer(device, queue, commandPool, vertexBufferStaging, vertexBuffer, bufferSize);
+  createStagedBuffer(device, physicalDevice, queue, commandPool, bufferSize, vertices,
+                     VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, vertexBuffer);
 }
 
 void createIndexBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue,
-                       VkCommandPool commandPool) {
+                       VkCommandPool commandPool, VkBuffer* indexBuffer) {
+  indexCount = 6;
+  const uint32_t indices[] = {0, 1, 2, 2, 3, 0};
   VkDeviceSize bufferSize = sizeof(indices);
 
-  // STAGING BUFFER
-  VkBuffer indexBufferStaging;
-  VkDeviceMemory indexBufferMemoryStaging;
-  createBuffer(device, physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-               &indexBufferStaging, &indexBufferMemoryStaging);
-
-  void* data;
-  vkMapMemory(device, indexBufferMemoryStaging, 0, bufferSize, 0, &data);
-  memcpy(data, indices, (size_t)bufferSize);
-  vkUnmapMemory(device, indexBufferMemoryStaging);
-
-  // FINAL BUFFER
-  VkDeviceMemory indexBufferMemory;
-  createBuffer(device, physicalDevice, bufferSize,
-               VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-               //  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &indexBuffer, &indexBufferMemory);
-
-  // Copy staging to final
-  copyBuffer(device, queue, commandPool, indexBufferStaging, indexBuffer, bufferSize);
+  createStagedBuffer(device, physicalDevice, queue, commandPool, bufferSize, indices,
+                     VK_BUFFER_USAGE_INDEX_BUFFER_BIT, indexBuffer);
 }
 
-void* uniformBuffersMapped[MAX_FRAMES_IN_FLIGHT];
-VkBuffer uniformBuffers[MAX_FRAMES_IN_FLIGHT];
-VkDeviceMemory uniformBuffersMemory[MAX_FRAMES_IN_FLIGHT];
+void createUniformBuffers(VkDevice device, VkPhysicalDevice physicalDevice,
+                          void** uniformBuffersMapped, VkBuffer* uniformBuffers) {
+  // VkDeviceMemory uniformBuffersMemory[MAX_FRAMES_IN_FLIGHT];
 
-void createUniformBuffers(VkDevice device, VkPhysicalDevice physicalDevice) {
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     VkDeviceSize bufferSize = sizeof(UniformBufferObject);
     VkBuffer buffer = {0};
@@ -540,15 +527,12 @@ void createUniformBuffers(VkDevice device, VkPhysicalDevice physicalDevice) {
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  &buffer, &bufferMem);
     uniformBuffers[i] = buffer;
-    uniformBuffersMemory[i] = bufferMem;
+    // uniformBuffersMemory[i] = bufferMem;
     vkMapMemory(device, bufferMem, 0, bufferSize, 0, &uniformBuffersMapped[i]);
   }
 }
 
-VkDescriptorPool descriptorPool;
-VkDescriptorSet descriptorSets[MAX_FRAMES_IN_FLIGHT];
-
-void createDescriptorPool(VkDevice device) {
+void createDescriptorPool(VkDevice device, VkDescriptorPool* descriptorPool) {
   VkDescriptorPoolSize poolSize = {.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                                    .descriptorCount = MAX_FRAMES_IN_FLIGHT};
   VkDescriptorPoolCreateInfo poolCI = {
@@ -558,10 +542,15 @@ void createDescriptorPool(VkDevice device) {
     .poolSizeCount = 1,
     .pPoolSizes = &poolSize,
   };
-  vkCreateDescriptorPool(device, &poolCI, NULL, &descriptorPool);
+  vkCreateDescriptorPool(device, &poolCI, NULL, descriptorPool);
 }
 
-void createDescriptorSets(VkDevice device) {
+void createDescriptorSets(VkDevice device, VkBuffer* uniformBuffers,
+                          VkDescriptorSetLayout descriptorSetLayout,
+                          VkDescriptorSet* descriptorSets) {
+  VkDescriptorPool descriptorPool;
+  createDescriptorPool(device, &descriptorPool);
+
   VkDescriptorSetLayout layouts[] = {descriptorSetLayout, descriptorSetLayout};
   VkDescriptorSetAllocateInfo descriptorSetAI = {
     .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -587,20 +576,6 @@ void createDescriptorSets(VkDevice device) {
   }
 }
 
-void createCommandBuffers(VkDevice device, VkCommandBuffer** commandBuffersPtr,
-                          VkCommandPool commandPool) {
-  VkCommandBufferAllocateInfo alloc = {
-    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-    .commandPool = commandPool,
-    .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-    .commandBufferCount = MAX_FRAMES_IN_FLIGHT,
-  };
-  VkCommandBuffer* commandBuffers = malloc(sizeof(VkCommandBuffer) * alloc.commandBufferCount);
-  CHECK(vkAllocateCommandBuffers(device, &alloc, commandBuffers));
-
-  *commandBuffersPtr = commandBuffers;
-}
-
 void createSyncObjects(VkDevice device, uint32_t swapchainImageCount, SyncObjects* syncObjects) {
   VkSemaphoreCreateInfo semaphoreCI = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
   VkFenceCreateInfo fenceCI = {
@@ -623,7 +598,9 @@ void createSyncObjects(VkDevice device, uint32_t swapchainImageCount, SyncObject
 
 void initVulkan(GLFWwindow* window, VkSurfaceKHR* surface, VkPhysicalDevice* physicalDevice,
                 VkDevice* device, VkQueue* queue, Swapchain* swapchain,
-                VkPipeline* graphicsPipeline, VkCommandBuffer** commandBuffers,
+                VkPipelineLayout* pipelineLayout, VkPipeline* graphicsPipeline,
+                void** uniformBuffersMapped, VkDescriptorSet* descriptorSets,
+                VkBuffer* vertexBuffer, VkBuffer* indexBuffer, VkCommandBuffer** commandBuffersPtr,
                 SyncObjects* syncObjects) {
   VkInstance instance;
   createInstance(&instance);
@@ -632,35 +609,41 @@ void initVulkan(GLFWwindow* window, VkSurfaceKHR* surface, VkPhysicalDevice* phy
 
   uint32_t queueFamilyIndex = pickPhysicalDevice(instance, *surface, physicalDevice);
   createLogicalDevice(*physicalDevice, queueFamilyIndex, device);
-  vkGetDeviceQueue(*device, queueFamilyIndex, 0, queue);
 
   createSwapchain(window, *surface, *physicalDevice, *device, swapchain);
 
-  createDescriptorSetLayout(*device);
+  VkDescriptorSetLayout descriptorSetLayout;
+  createDescriptorSetLayout(*device, &descriptorSetLayout);
 
-  createPipeline(*device, swapchain, graphicsPipeline);
+  createPipeline(*device, swapchain, descriptorSetLayout, graphicsPipeline, pipelineLayout);
 
-  VkCommandPoolCreateInfo pool = {
+  vkGetDeviceQueue(*device, queueFamilyIndex, 0, queue);
+
+  VkCommandPoolCreateInfo commandPoolCI = {
     .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
     .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
     .queueFamilyIndex = queueFamilyIndex,
   };
   VkCommandPool commandPool;
-  CHECK(vkCreateCommandPool(*device, &pool, NULL, &commandPool));
+  CHECK(vkCreateCommandPool(*device, &commandPoolCI, NULL, &commandPool));
 
-  createVertexBuffer(*device, *physicalDevice, *queue, commandPool);
-  createIndexBuffer(*device, *physicalDevice, *queue, commandPool);
-  createUniformBuffers(*device, *physicalDevice);
-  createDescriptorPool(*device);
-  createDescriptorSets(*device);
+  createVertexBuffer(*device, *physicalDevice, *queue, commandPool, vertexBuffer);
+  createIndexBuffer(*device, *physicalDevice, *queue, commandPool, indexBuffer);
 
-  createCommandBuffers(*device, commandBuffers, commandPool);
+  VkBuffer uniformBuffers[MAX_FRAMES_IN_FLIGHT];
+
+  createUniformBuffers(*device, *physicalDevice, uniformBuffersMapped, uniformBuffers);
+  createDescriptorSets(*device, uniformBuffers, descriptorSetLayout, descriptorSets);
+
+  *commandBuffersPtr = createCommandBuffers(*device, commandPool, MAX_FRAMES_IN_FLIGHT);
 
   createSyncObjects(*device, swapchain->imageCount, syncObjects);
 }
 
 void recordCommandBuffers(uint32_t imageIndex, VkCommandBuffer commandBuffer,
-                          VkPipeline graphicsPipeline, Swapchain* swapchain) {
+                          VkPipeline graphicsPipeline, VkPipelineLayout pipelineLayout,
+                          Swapchain* swapchain, VkDescriptorSet* descriptorSets,
+                          VkBuffer vertexBuffer, VkBuffer indexBuffer) {
   // Bunch of stuff needs to be based on the imageIndex rather than frame. So even if there is only
   // one command buffer per "frame in flight" (2) the commands are recreated on every image (4)
   VkCommandBufferBeginInfo begin = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -720,7 +703,7 @@ void recordCommandBuffers(uint32_t imageIndex, VkCommandBuffer commandBuffer,
   vkEndCommandBuffer(commandBuffer);
 }
 
-void updateUniformBuffer(Swapchain* swapchain) {
+void updateUniformBuffer(Swapchain* swapchain, void** uniformBuffersMapped) {
   UniformBufferObject ubo = {0};
   glm_mat4_identity(ubo.model);
   // glm_lookat((vec3){2.0f, 2.0, 2.0}, (vec3){0.0f, 0.0f, 0.0f}, (vec3){0.0f, 0.0f, 1.0f},
@@ -734,20 +717,23 @@ void updateUniformBuffer(Swapchain* swapchain) {
 
 void drawFrame(VkDevice device, VkQueue queue, Swapchain* swapchain,
                VkCommandBuffer* commandBuffers, VkPipeline graphicsPipeline,
-               SyncObjects* syncObjects) {
+               VkPipelineLayout pipelineLayout, SyncObjects* syncObjects,
+               void** uniformBuffersMapped, VkDescriptorSet* descriptorSets, VkBuffer vertexBuffer,
+               VkBuffer indexBuffer) {
   vkWaitForFences(device, 1, &syncObjects->inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+  vkResetFences(device, 1, &syncObjects->inFlightFences[currentFrame]);
 
   uint32_t imageIndex;
   vkAcquireNextImageKHR(device, swapchain->handle, UINT64_MAX,
                         syncObjects->imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE,
                         &imageIndex);
 
-  updateUniformBuffer(swapchain);
-  vkResetFences(device, 1, &syncObjects->inFlightFences[currentFrame]);
+  updateUniformBuffer(swapchain, uniformBuffersMapped);
 
   VkCommandBuffer commandBuffer = commandBuffers[currentFrame];
-  vkResetCommandBuffer(commandBuffer, VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
-  recordCommandBuffers(imageIndex, commandBuffer, graphicsPipeline, swapchain);
+  // vkResetCommandBuffer(commandBuffer, VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
+  recordCommandBuffers(imageIndex, commandBuffer, graphicsPipeline, pipelineLayout, swapchain,
+                       descriptorSets, vertexBuffer, indexBuffer);
 
   VkSubmitInfo submit = {
     .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
@@ -784,22 +770,36 @@ int main() {
   VkSurfaceKHR surface;
   VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
   VkDevice device;
-  // Commandbuffers are sent to the queue which is then submitted to the GPU
-  VkQueue queue;
+
   // Owns the framebuffers. Essentially a queue of images. The general purpose of the swap chain is
   // to synchronize the presentation of images with the refresh rate of the screen.
   Swapchain swapchain;
+
+  VkPipelineLayout pipelineLayout;
+  VkPipeline graphicsPipeline;
+
+  // Commandbuffers are sent to the queue which is then submitted to the GPU
+  VkQueue queue;
+
+  VkBuffer vertexBuffer;
+  VkBuffer indexBuffer;
+
+  void* uniformBuffersMapped[MAX_FRAMES_IN_FLIGHT];
+  VkDescriptorSet descriptorSets[MAX_FRAMES_IN_FLIGHT];
+
   // Buffer for recording Vulkan commands
   VkCommandBuffer* commandBuffers;
-  VkPipeline graphicsPipeline;
+
   SyncObjects syncObjects;
 
-  initVulkan(window, &surface, &physicalDevice, &device, &queue, &swapchain, &graphicsPipeline,
+  initVulkan(window, &surface, &physicalDevice, &device, &queue, &swapchain, &pipelineLayout,
+             &graphicsPipeline, uniformBuffersMapped, descriptorSets, &vertexBuffer, &indexBuffer,
              &commandBuffers, &syncObjects);
 
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
-    drawFrame(device, queue, &swapchain, commandBuffers, graphicsPipeline, &syncObjects);
+    drawFrame(device, queue, &swapchain, commandBuffers, graphicsPipeline, pipelineLayout,
+              &syncObjects, uniformBuffersMapped, descriptorSets, vertexBuffer, indexBuffer);
 
     if (framebufferResized) {
       framebufferResized = false;
