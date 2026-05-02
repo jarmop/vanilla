@@ -18,6 +18,34 @@ size_t currentFrame = 0;
 bool framebufferResized = false;
 int indexCount;
 
+const float MOUSE_SENSITIVITY = 0.1;
+const float MAX_FOV = 45.0f;
+
+struct camera {
+  vec3 pos;
+  vec3 front;
+  vec3 right;
+  float yaw;
+  float pitch;
+  float speed;
+  float fov;
+} camera = {
+  {2.0f, 2.0f, 2.0f},  // pos
+  {0.0f, 0.0f, 0.0f},  // front
+  {0.0f, 0.0f, 0.0f},  // right
+  -135.0,              // yaw
+  -35.0,               // pitch
+  2.5,                 // speed
+  MAX_FOV              // fov
+};
+
+vec3 worldUp = {0.0f, 0.0f, -1.0f};
+
+float prevMouseX, prevMouseY;
+bool mouseRightPressed = false;
+bool firstMouse = true;
+float previousFrameTime = 0.0;  // Time of the previous frame
+
 void CHECK(int x) {
   if ((x) != VK_SUCCESS) {
     printf("Vulkan error: %d\n", x);
@@ -50,6 +78,90 @@ void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
   (void)width;
   (void)height;
   framebufferResized = true;
+}
+
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
+  (void)window;
+  (void)mods;
+  if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+    if (action == GLFW_PRESS) {
+      mouseRightPressed = true;
+      glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    } else {
+      mouseRightPressed = false;
+      firstMouse = true;
+      glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    }
+  }
+}
+
+void updateCamera() {
+  camera.front[0] = cos(glm_rad(camera.yaw)) * cos(glm_rad(camera.pitch));
+  camera.front[1] = sin(glm_rad(camera.pitch));
+  camera.front[2] = sin(glm_rad(camera.yaw)) * cos(glm_rad(camera.pitch));
+  glm_normalize(camera.front);
+  glm_cross(camera.front, worldUp, camera.right);
+  glm_normalize(camera.right);
+}
+
+void mouse_callback(GLFWwindow* window, double mouseX, double mouseY) {
+  (void)window;
+  if (!mouseRightPressed) {
+    return;
+  }
+  // fprintf(stderr, "x: %d, y: %d\n", (int)xpos, (int)ypos);
+
+  if (firstMouse) {
+    prevMouseX = mouseX;
+    prevMouseY = mouseY;
+    firstMouse = false;
+  }
+
+  camera.yaw += (mouseX - prevMouseX) * MOUSE_SENSITIVITY;
+  camera.pitch -= (mouseY - prevMouseY) * MOUSE_SENSITIVITY;
+  prevMouseX = mouseX;
+  prevMouseY = mouseY;
+
+  if (camera.pitch > 89.0) {
+    camera.pitch = 89.0;
+  } else if (camera.pitch < -89.0) {
+    camera.pitch = -89.0;
+  }
+
+  updateCamera();
+}
+
+/**
+ * GLFW input getters like glfwGetKey return the last state for the specified
+ * key, ignoring GLFW_REPEAT as it's the same as GLFW_PRESS in this context, so
+ * they only return GLFW_PRESS or GLFW_KEY.
+ */
+void handleCameraMovementKeys(GLFWwindow* window) {
+  float currentTime = glfwGetTime();
+  const float cameraMovement = camera.speed * (currentTime - previousFrameTime);
+  previousFrameTime = currentTime;
+
+  // WASD
+  if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+    glm_vec3_muladds(camera.front, cameraMovement, camera.pos);
+  }
+  if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+    glm_vec3_mulsubs(camera.front, cameraMovement, camera.pos);
+  }
+  if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+    glm_vec3_mulsubs(camera.right, cameraMovement, camera.pos);
+  }
+  if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+    glm_vec3_muladds(camera.right, cameraMovement, camera.pos);
+  }
+
+  // Elevation
+  if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
+    glm_vec3_muladds(worldUp, cameraMovement, camera.pos);
+  }
+  if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS) {
+    glm_vec3_mulsubs(worldUp, cameraMovement, camera.pos);
+  }
 }
 
 void createInstance(VkInstance* instance) {
@@ -674,11 +786,13 @@ void recordCommandBuffers(uint32_t imageIndex, VkCommandBuffer commandBuffer,
     .pImageMemoryBarriers = &barrier,
   };
   vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
-
+  VkClearValue clearValue = {.color = {{0.0f, 0.0f, 0.0f, 1.0f}}};
   VkRenderingAttachmentInfo colorAttachmentInfo = {
     .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
     .imageView = swapchain->imageViews[imageIndex],
     .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR,
+    .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+    .clearValue = clearValue,
   };
   VkRenderingInfo renderingInfo = {
     .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
@@ -711,11 +825,12 @@ void recordCommandBuffers(uint32_t imageIndex, VkCommandBuffer commandBuffer,
 void updateUniformBuffer(Swapchain* swapchain, void** uniformBuffersMapped) {
   UniformBufferObject ubo = {0};
   glm_mat4_identity(ubo.model);
-  // glm_lookat((vec3){2.0f, 2.0, 2.0}, (vec3){0.0f, 0.0f, 0.0f}, (vec3){0.0f, 0.0f, 1.0f},
-  // ubo.view);
-  glm_lookat((vec3){2.0f, 2.0, 2.0}, (vec3){0.0f, 0.0f, 0.0f}, (vec3){0.0f, 0.0f, -1.0f}, ubo.view);
-  glm_perspective(glm_rad(45.0f), (float)swapchain->extent.width / (float)swapchain->extent.height,
-                  0.1f, 10.0f, ubo.proj);
+  vec3 cameraPosFront;
+  glm_vec3_add(camera.pos, camera.front, cameraPosFront);
+  glm_lookat(camera.pos, cameraPosFront, worldUp, ubo.view);
+  glm_perspective(glm_rad(camera.fov),
+                  (float)swapchain->extent.width / (float)swapchain->extent.height, 0.1f, 100.0f,
+                  ubo.proj);
   // ubo.proj[1][1] *= -1;
   memcpy(uniformBuffersMapped[currentFrame], &ubo, sizeof(ubo));
 }
@@ -771,6 +886,9 @@ int main() {
   GLFWwindow* window = glfwCreateWindow(800, 600, "Vulkan Tutorial", NULL, NULL);
   glfwSetKeyCallback(window, keyCallback);
   glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
+  glfwSetCursorPosCallback(window, mouse_callback);
+  glfwSetMouseButtonCallback(window, mouse_button_callback);
+  // glfwSetScrollCallback(window, scroll_callback);
 
   VkSurfaceKHR surface;
   VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
@@ -801,8 +919,11 @@ int main() {
              &graphicsPipeline, uniformBuffersMapped, descriptorSets, &vertexBuffer, &indexBuffer,
              &commandBuffers, &syncObjects);
 
+  updateCamera();
+
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
+    handleCameraMovementKeys(window);
     drawFrame(device, queue, &swapchain, commandBuffers, graphicsPipeline, pipelineLayout,
               &syncObjects, uniformBuffersMapped, descriptorSets, vertexBuffer, indexBuffer);
 
