@@ -648,12 +648,14 @@ void recordCommandBuffers(uint32_t imageIndex, VkCommandBuffer commandBuffer,
   // one command buffer per "frame in flight" (2) the commands are recreated on every image (4)
   VkCommandBufferBeginInfo begin = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
 
-  // VkCommandBuffer commandBuffer = commandBuffers[i];
-
   vkBeginCommandBuffer(commandBuffer, &begin);
 
-  VkImageMemoryBarrier barrier = {
-    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+  VkImageMemoryBarrier2 barrier = {
+    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+    // .srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+    .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+    .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+    .dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
     .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
     .newLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR,
     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -666,9 +668,12 @@ void recordCommandBuffers(uint32_t imageIndex, VkCommandBuffer commandBuffer,
         .layerCount = 1,
       },
   };
-  vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                       VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, NULL, 0, NULL, 1,
-                       &barrier);
+  VkDependencyInfo dependencyInfo = {
+    .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+    .imageMemoryBarrierCount = 1,
+    .pImageMemoryBarriers = &barrier,
+  };
+  vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
 
   VkRenderingAttachmentInfo colorAttachmentInfo = {
     .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
@@ -694,11 +699,11 @@ void recordCommandBuffers(uint32_t imageIndex, VkCommandBuffer commandBuffer,
 
   vkCmdEndRendering(commandBuffer);
 
+  // barrier.dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
   barrier.oldLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR;
   barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-  vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                       VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
+  vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
 
   vkEndCommandBuffer(commandBuffer);
 }
