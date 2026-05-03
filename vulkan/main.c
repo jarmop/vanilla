@@ -712,10 +712,10 @@ void createSyncObjects(VkDevice device, uint32_t swapchainImageCount, SyncObject
 
 void initVulkan(GLFWwindow* window, VkSurfaceKHR* surface, VkPhysicalDevice* physicalDevice,
                 VkDevice* device, VkQueue* queue, Swapchain* swapchain,
-                VkPipelineLayout* pipelineLayout, VkPipeline* graphicsPipeline,
-                void** uniformBuffersMapped, VkDescriptorSet* descriptorSets,
-                VkBuffer* vertexBuffer, VkBuffer* indexBuffer, VkCommandBuffer** commandBuffersPtr,
-                SyncObjects* syncObjects) {
+                VkDescriptorSetLayout* descriptorSetLayout, VkPipelineLayout* pipelineLayout,
+                VkPipeline* graphicsPipeline, void** uniformBuffersMapped,
+                VkDescriptorSet* descriptorSets, VkBuffer* vertexBuffer, VkBuffer* indexBuffer,
+                VkCommandBuffer** commandBuffersPtr, SyncObjects* syncObjects) {
   VkInstance instance;
   createInstance(&instance);
 
@@ -726,10 +726,9 @@ void initVulkan(GLFWwindow* window, VkSurfaceKHR* surface, VkPhysicalDevice* phy
 
   createSwapchain(window, *surface, *physicalDevice, *device, swapchain);
 
-  VkDescriptorSetLayout descriptorSetLayout;
-  createDescriptorSetLayout(*device, &descriptorSetLayout);
+  createDescriptorSetLayout(*device, descriptorSetLayout);
 
-  createPipeline(*device, swapchain, descriptorSetLayout, graphicsPipeline, pipelineLayout);
+  createPipeline(*device, swapchain, *descriptorSetLayout, graphicsPipeline, pipelineLayout);
 
   vkGetDeviceQueue(*device, queueFamilyIndex, 0, queue);
 
@@ -747,7 +746,7 @@ void initVulkan(GLFWwindow* window, VkSurfaceKHR* surface, VkPhysicalDevice* phy
   VkBuffer uniformBuffers[MAX_FRAMES_IN_FLIGHT];
 
   createUniformBuffers(*device, *physicalDevice, uniformBuffersMapped, uniformBuffers);
-  createDescriptorSets(*device, uniformBuffers, descriptorSetLayout, descriptorSets);
+  createDescriptorSets(*device, uniformBuffers, *descriptorSetLayout, descriptorSets);
 
   *commandBuffersPtr = createCommandBuffers(*device, commandPool, MAX_FRAMES_IN_FLIGHT);
 
@@ -899,6 +898,8 @@ int main() {
   // to synchronize the presentation of images with the refresh rate of the screen.
   Swapchain swapchain;
 
+  VkDescriptorSetLayout descriptorSetLayout;
+
   VkPipelineLayout pipelineLayout;
   VkPipeline graphicsPipeline;
 
@@ -916,9 +917,9 @@ int main() {
 
   SyncObjects syncObjects;
 
-  initVulkan(window, &surface, &physicalDevice, &device, &queue, &swapchain, &pipelineLayout,
-             &graphicsPipeline, uniformBuffersMapped, descriptorSets, &vertexBuffer, &indexBuffer,
-             &commandBuffers, &syncObjects);
+  initVulkan(window, &surface, &physicalDevice, &device, &queue, &swapchain, &descriptorSetLayout,
+             &pipelineLayout, &graphicsPipeline, uniformBuffersMapped, descriptorSets,
+             &vertexBuffer, &indexBuffer, &commandBuffers, &syncObjects);
 
   updateCamera();
 
@@ -943,6 +944,9 @@ int main() {
 
       vkDestroySwapchainKHR(device, swapchain.handle, NULL);
       createSwapchain(window, surface, physicalDevice, device, &swapchain);
+      vkDestroyPipelineLayout(device, pipelineLayout, NULL);
+      vkDestroyPipeline(device, graphicsPipeline, NULL);
+      createPipeline(device, &swapchain, descriptorSetLayout, &graphicsPipeline, &pipelineLayout);
     }
   }
 
