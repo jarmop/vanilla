@@ -30,16 +30,16 @@ struct camera {
   float speed;
   float fov;
 } camera = {
-  {2.0f, 2.0f, 2.0f},  // pos
-  {0.0f, 0.0f, 0.0f},  // front
-  {0.0f, 0.0f, 0.0f},  // right
-  -135.0,              // yaw
-  -35.0,               // pitch
-  2.5,                 // speed
-  MAX_FOV              // fov
+  {0.0f, 0.0f, 2.0f},   // pos
+  {0.0f, 0.0f, -1.0f},  // front
+  {1.0f, 0.0f, 0.0f},   // right
+  -90.0,                // yaw
+  0.0,                  // pitch
+  2.5,                  // speed
+  MAX_FOV               // fov
 };
 
-vec3 worldUp = {0.0f, 0.0f, -1.0f};
+vec3 worldUp = {0.0f, 1.0f, 0.0f};
 
 float prevMouseX, prevMouseY;
 bool mouseRightPressed = false;
@@ -440,12 +440,16 @@ void createPipeline(VkDevice device, Swapchain* swapchain,
     .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
   };
 
+  // Viewport y axis is inverted to match OpenGL and glm_lookat:
+  // viewport y: 0 --> swapchain.extent.height
+  // viewport height: swapchain.extent.height --> -swapchain.extent.height
   VkPipelineViewportStateCreateInfo viewportState = {
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
     .viewportCount = 1,
     .pViewports = (VkViewport[]){{
+      .y = (float)swapchain->extent.height,
       .width = (float)swapchain->extent.width,
-      .height = (float)swapchain->extent.height,
+      .height = -(float)swapchain->extent.height,
       .maxDepth = 1.0f,
     }},
     .scissorCount = 1,
@@ -456,8 +460,6 @@ void createPipeline(VkDevice device, Swapchain* swapchain,
     .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
     .polygonMode = VK_POLYGON_MODE_FILL,
     .lineWidth = 1.0f,
-    .cullMode = VK_CULL_MODE_BACK_BIT,
-    .frontFace = VK_FRONT_FACE_CLOCKWISE,
   };
 
   VkPipelineMultisampleStateCreateInfo multiSampleState = {
@@ -605,10 +607,10 @@ void createVertexBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkQueu
                         VkCommandPool commandPool, VkBuffer* vertexBuffer) {
   // clang-format off
   const Vertex vertices[] = {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{ 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{ 0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}},
-    {{-0.5f,  0.5f}, {1.0f, 1.0f, 1.0f}},
+    {{-0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{ 0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{ 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{-0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}},
   };
   // clang-format on
   VkDeviceSize bufferSize = sizeof(vertices);
@@ -831,7 +833,6 @@ void updateUniformBuffer(Swapchain* swapchain, void** uniformBuffersMapped) {
   glm_perspective(glm_rad(camera.fov),
                   (float)swapchain->extent.width / (float)swapchain->extent.height, 0.1f, 100.0f,
                   ubo.proj);
-  // ubo.proj[1][1] *= -1;
   memcpy(uniformBuffersMapped[currentFrame], &ubo, sizeof(ubo));
 }
 
