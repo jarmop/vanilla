@@ -5,6 +5,8 @@
 #include <GLFW/glfw3.h>
 #include <cglm/cglm.h>
 
+#define MAX_FRAMES_IN_FLIGHT 2
+
 typedef struct {
   VkSwapchainKHR handle;
   VkExtent2D extent;
@@ -37,5 +39,40 @@ typedef struct {
   mat4 view;
   mat4 proj;
 } UniformBufferObject;
+
+typedef struct {
+  vec3 pos;
+  vec3 front;
+  vec3 right;
+  float yaw;
+  float pitch;
+  float speed;
+  float fov;
+} Camera;
+
+typedef struct {
+  VkSurfaceKHR surface;
+  VkPhysicalDevice physicalDevice;
+  VkDevice device;
+  // Swapchain owns the framebuffers. Essentially a queue of images. The general purpose of the swap
+  // chain is to synchronize the presentation of images with the refresh rate of the screen.
+  Swapchain swapchain;
+  SyncObjects syncObjects;
+  // Buffer for recording Vulkan commands
+  VkCommandBuffer* commandBuffers;
+  void* uniformBuffersMapped[MAX_FRAMES_IN_FLIGHT];
+  VkDescriptorSetLayout descriptorSetLayout;
+  VkDescriptorSet descriptorSets[MAX_FRAMES_IN_FLIGHT];
+  VkPipelineLayout pipelineLayout;
+  VkPipeline graphicsPipeline;
+  // Commandbuffers are sent to the queue which is then submitted to the GPU
+  VkQueue queue;
+  VkBuffer vertexBuffer;
+  VkBuffer indexBuffer;
+  GLFWwindow* window;
+  Camera* camera;
+  bool* framebufferResized;
+  vec3* worldUp;
+} Engine;
 
 #endif

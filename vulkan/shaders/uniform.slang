@@ -11,8 +11,8 @@ struct UniformBuffer {
 ConstantBuffer<UniformBuffer> ubo;
 
 struct VertexOutput {
-    float3 color;
     float4 pos : SV_Position;
+    float3 color;
 };
 
 [shader("vertex")]
