@@ -306,20 +306,10 @@ void createPipeline(VkDevice device, Swapchain* swapchain,
     .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
   };
 
-  // Viewport y axis is inverted to match OpenGL and glm_lookat:
-  // viewport y: 0 --> swapchain.extent.height
-  // viewport height: swapchain.extent.height --> -swapchain.extent.height
   VkPipelineViewportStateCreateInfo viewportState = {
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
     .viewportCount = 1,
-    .pViewports = (VkViewport[]){{
-      .y = (float)swapchain->extent.height,
-      .width = (float)swapchain->extent.width,
-      .height = -(float)swapchain->extent.height,
-      .maxDepth = 1.0f,
-    }},
     .scissorCount = 1,
-    .pScissors = (VkRect2D[]){{{0, 0}, swapchain->extent}},
   };
 
   VkPipelineRasterizationStateCreateInfo rasterizationState = {
@@ -344,6 +334,12 @@ void createPipeline(VkDevice device, Swapchain* swapchain,
     }},
   };
 
+  VkPipelineDynamicStateCreateInfo dynamicState = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+    .dynamicStateCount = 2,
+    .pDynamicStates = (VkDynamicState[]){VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR},
+  };
+
   VkPipelineLayoutCreateInfo layoutInfo = {
     .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
     .setLayoutCount = 1,
@@ -364,6 +360,7 @@ void createPipeline(VkDevice device, Swapchain* swapchain,
     .pRasterizationState = &rasterizationState,
     .pMultisampleState = &multiSampleState,
     .pColorBlendState = &colorBlendState,
+    .pDynamicState = &dynamicState,
     .layout = *pipelineLayout,
   };
   CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipe, NULL, graphicsPipeline));
@@ -632,10 +629,6 @@ void ngHandleWindowResize(Engine* ng) {
   vkDeviceWaitIdle(ng->device);
   vkDestroySwapchainKHR(ng->device, ng->swapchain.handle, NULL);
   createSwapchain(ng->window, ng->surface, ng->physicalDevice, ng->device, &ng->swapchain);
-  vkDestroyPipelineLayout(ng->device, ng->pipelineLayout, NULL);
-  vkDestroyPipeline(ng->device, ng->graphicsPipeline, NULL);
-  createPipeline(ng->device, &ng->swapchain, ng->descriptorSetLayout, &ng->pipelineLayout,
-                 &ng->graphicsPipeline);
 }
 
 #endif

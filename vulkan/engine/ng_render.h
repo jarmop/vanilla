@@ -18,6 +18,17 @@ void recordCommandBuffers(VkCommandBuffer commandBuffer, VkPipeline graphicsPipe
   vkBeginCommandBuffer(commandBuffer, &begin);
 
   vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+  // Viewport y axis is inverted to match OpenGL and glm_lookat:
+  // viewport y: 0 --> swapchain.extent.height
+  // viewport height: swapchain.extent.height --> -swapchain.extent.height
+  vkCmdSetViewport(commandBuffer, 0, 1,
+                   (VkViewport[]){{
+                     .y = (float)swapchain->extent.height,
+                     .width = (float)swapchain->extent.width,
+                     .height = -(float)swapchain->extent.height,
+                     .maxDepth = 1.0f,
+                   }});
+  vkCmdSetScissor(commandBuffer, 0, 1, (VkRect2D[]){{{0, 0}, swapchain->extent}});
   vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
                           &descriptorSets[currentFrame], 0, NULL);
 
