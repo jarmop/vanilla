@@ -1,5 +1,5 @@
-#ifndef NG_RENDER
-#define NG_RENDER
+#ifndef RENDER
+#define RENDER
 
 #include <cglm/cglm.h>
 
@@ -88,8 +88,7 @@ void recordCommandBuffers(VkCommandBuffer commandBuffer, VkPipeline graphicsPipe
   vkEndCommandBuffer(commandBuffer);
 }
 
-// void updateUniformBuffer(Swapchain* swapchain, void** uniformBuffersMapped) {
-void ngUpdateUniformBuffer(Engine ng, Camera camera, vec3 worldUp) {
+void updateUniformBuffer(Engine ng, Camera camera, vec3 worldUp) {
   UniformBufferObject ubo = {0};
   glm_mat4_identity(ubo.model);
   vec3 cameraPosFront;
@@ -101,10 +100,10 @@ void ngUpdateUniformBuffer(Engine ng, Camera camera, vec3 worldUp) {
   memcpy(ng.uniformBuffersMapped[currentFrame], &ubo, sizeof(ubo));
 }
 
-void ngDrawFrame(VkDevice device, SyncObjects* syncObjects, Swapchain* swapchain,
-                 VkCommandBuffer* commandBuffers, VkPipeline graphicsPipeline,
-                 VkPipelineLayout pipelineLayout, VkDescriptorSet* descriptorSets,
-                 VkBuffer vertexBuffer, VkBuffer indexBuffer, VkQueue queue) {
+void drawFrame(VkDevice device, SyncObjects* syncObjects, Swapchain* swapchain,
+               VkCommandBuffer* commandBuffers, VkPipeline graphicsPipeline,
+               VkPipelineLayout pipelineLayout, VkDescriptorSet* descriptorSets,
+               VkBuffer vertexBuffer, VkBuffer indexBuffer, VkQueue queue) {
   vkWaitForFences(device, 1, &syncObjects->inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
   vkResetFences(device, 1, &syncObjects->inFlightFences[currentFrame]);
 

@@ -1,5 +1,5 @@
-#ifndef H_NG_IO
-#define H_NG_IO
+#ifndef H_IO
+#define H_IO
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -130,7 +130,7 @@ void handleCameraMovementKeys(GLFWwindow* window, Camera* camera) {
   }
 }
 
-void ngInitIo(GLFWwindow* window, Engine* ng) {
+void initIo(GLFWwindow* window, Engine* ng) {
   ng->framebufferResized = &framebufferResized;
   ng->camera = &camera;
   ng->worldUp = &worldUp;
